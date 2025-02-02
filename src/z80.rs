@@ -153,8 +153,7 @@ impl Cpu {
 	    instr_set: &INSTR_SET_INTEL,
 	    cycles: 0,
 	    ei_pend: false,
-	    }
-	//}
+	}
     }
 
     pub fn reset(&mut self) {
@@ -237,42 +236,42 @@ impl Cpu {
 	match op {
 	    0 => { //ADD
 		tmp = tmp.wrapping_add(s as u16);
-		self.f.set(PSW::A, ((self.a & 0xf) + (s & 0xf)) > 0x0f);
+		self.f.set(PSW::H, ((self.a & 0xf) + (s & 0xf)) > 0x0f);
 		self.f.set(PSW::C, tmp > 0xff);
 	    },
 	    1 => { //ADC
 		tmp = tmp.wrapping_add(s as u16).wrapping_add(cflag);
-		self.f.set(PSW::A, ((self.a & 0xf) + (s & 0xf) + cflag as u8) > 0x0f);
+		self.f.set(PSW::H, ((self.a & 0xf) + (s & 0xf) + cflag as u8) > 0x0f);
 		self.f.set(PSW::C, tmp > 0xff);
 	    },
 	    2 => { //SUB
 		tmp = tmp.wrapping_sub(s as u16);
-		self.f.set(PSW::A, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + 1) > 0x0f);
+		self.f.set(PSW::H, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + 1) > 0x0f);
 		self.f.set(PSW::C, tmp > 0xff);
 	    },
 	    3 => { //SBB
 		tmp = tmp.wrapping_sub(s as u16).wrapping_sub(cflag);
-		self.f.set(PSW::A, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + ((!cflag as u8) & 1)) > 0x0f);
+		self.f.set(PSW::H, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + ((!cflag as u8) & 1)) > 0x0f);
 		self.f.set(PSW::C, tmp > 0xff);
 	    },
 	    4 => { //ANA
 		tmp = (self.a & s) as u16;
 		self.f.set(PSW::C, false);
-		self.f.set(PSW::A, ((self.a | s) & 0x08) != 0);
+		self.f.set(PSW::H, ((self.a | s) & 0x08) != 0);
 	    },
 	    5 => { //XRA
 		tmp = (self.a ^ s) as u16;
 		self.f.set(PSW::C, false);
-		self.f.set(PSW::A, false);
+		self.f.set(PSW::H, false);
 	    },
 	    6 => { //ORA
 		tmp = (self.a | s) as u16;
 		self.f.set(PSW::C, false);
-		self.f.set(PSW::A, false);
+		self.f.set(PSW::H, false);
 	    },
 	    _ => { //CMP
 		tmp = tmp.wrapping_sub(s as u16);
-		self.f.set(PSW::A, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + 1) > 0x0f);
+		self.f.set(PSW::H, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + 1) > 0x0f);
 		self.f.set(PSW::C, tmp > 0xff);
 	    },
 	};
@@ -330,14 +329,14 @@ impl Cpu {
     pub fn step(&mut self) -> usize {
 	let oldcycles = self.cycles;
 	let mut opcode: u8 = self.bus.read_byte(self.pc);
-	if self.bus.irq && self.ime {
+	if self.bus.irq && self.iff {
 	    self.pc -= 1; //1 byte will be added later, want to ret back to interrupted instr
-	    self.ime = false;
+	    self.iff = false;
 	    self.bus.irq = false;
 	    opcode = self.bus.irq_vec;
 	}
 	if self.ei_pend {
-	    self.ime = true;
+	    self.iff = true;
 	    self.ei_pend = false;
 	    //there will be no chance for interrupts until
 	    //after this instruction runs so we have effectively
@@ -493,7 +492,7 @@ impl Cpu {
 		self.f.set(PSW::Z, tmp == 0);
 		self.f.set(PSW::S, (tmp & 0x80) != 0);
 		self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
-		self.f.set(PSW::A, ((d & 0x0f).wrapping_add(1)) > 0x0f);
+		self.f.set(PSW::H, ((d & 0x0f).wrapping_add(1)) > 0x0f);
 		let tmp = tmp as u8;
 		match d_bits {
 		    0 => self.b = tmp,
@@ -515,7 +514,7 @@ impl Cpu {
 		self.f.set(PSW::Z, tmp == 0);
 		self.f.set(PSW::S, (tmp & 0x80) != 0);
 		self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
-		self.f.set(PSW::A, (d & 0x0f) != 0);
+		self.f.set(PSW::H, (d & 0x0f) != 0);
 		let tmp = tmp as u8;
 		match d_bits {
 		    0 => self.b = tmp,
@@ -541,8 +540,8 @@ impl Cpu {
 	    },
 	    0x27 => { //DAA
 		let mut tmp = self.a as u16;
-		if ((tmp & 0x0f) > 0x09) || self.f.contains(PSW::A) {
-		    self.f.set(PSW::A, (((tmp & 0x0f) + 0x06) & 0xf0) != 0);
+		if ((tmp & 0x0f) > 0x09) || self.f.contains(PSW::H) {
+		    self.f.set(PSW::H, (((tmp & 0x0f) + 0x06) & 0xf0) != 0);
 		    tmp += 6;
 		    if (tmp & 0xff00) != 0 {
 			self.f.insert(PSW::C);
@@ -606,16 +605,20 @@ impl Cpu {
 		self.a = self.bus.read_io_byte(op1);
 	    },
 	    0xf3 => { //DI
-		self.ime = false;
+		self.iff = false;
 	    },
 	    0xfb => { //EI
 		self.ei_pend = true;
 	    },
 	    0x08 => { //EX AF, AF'
-		todo!();
+		let tmp = self.shadow;
+		self.shadow[6] = self.a;
+		self.shadow[7] = self.f.as_u8();
+		self.a = tmp[0];
+		self.f = PSW::from_bits(tmp[1]).unwrap();
 	    },
 	    0x10 | 0x20 | 0x30 |
-	    0x18 | 0x28 | 0x28 => { //DJNZ + JR
+	    0x18 | 0x28 | 0x38 => { //DJNZ + JR
 		todo!();
 	    },
 	    0xd9 => { //EXX
@@ -627,269 +630,7 @@ impl Cpu {
     }
 }
 
-fn disas(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
-    print!("{:04X} ", pc);
-    match opcode {
-	0x00 => println!("NOP"),
-	0x01 => println!("LXI    B, ${opw:04X}"),
-	0x02 => println!("STAX   B"),
-	0x03 => println!("INX    B"),
-	0x04 => println!("INR    B"),
-	0x05 => println!("DCR    B"),
-	0x06 => println!("MVI    B, ${op1:02X}"),
-	0x07 => println!("RLC"),
-	0x08 => println!("NOP"),
-	0x09 => println!("DAD    B"),
-	0x0A => println!("LDAX   B"),
-	0x0B => println!("DCX    B"),
-	0x0C => println!("INR    C"),
-	0x0D => println!("DCR    C"),
-	0x0E => println!("MVI    C, ${op1:02X}"),
-	0x0F => println!("RRC"),
-	0x10 => println!("NOP"),
-	0x11 => println!("LXI    D, ${opw:04X}"),
-	0x12 => println!("STAX   D"),
-	0x13 => println!("INX    D"),
-	0x14 => println!("INR    D"),
-	0x15 => println!("DCR    D"),
-	0x16 => println!("MVI    D, ${op1:02X}"),
-	0x17 => println!("RAL"),
-	0x18 => println!("NOP"),
-	0x19 => println!("DAD    D"),
-	0x1A => println!("LDAX   D"),
-	0x1B => println!("DCX    D"),
-	0x1C => println!("INR    E"),
-	0x1D => println!("DCR    E"),
-	0x1E => println!("MVI    E, ${op1:02X}"),
-	0x1F => println!("RAR"),
-	0x20 => println!("NOP"),
-	0x21 => println!("LXI    H, ${opw:04X}"),
-	0x22 => println!("SHLD   ${opw:04X}"),
-	0x23 => println!("INX    H"),
-	0x24 => println!("INR    H"),
-	0x25 => println!("DCR    H"),
-	0x26 => println!("MVI    H, ${op1:02X}"),
-	0x27 => println!("DAA"),
-	0x28 => println!("NOP"),
-	0x29 => println!("DAD    H"),
-	0x2A => println!("LHLD   ${opw:04X}"),
-	0x2B => println!("DCX    H"),
-	0x2C => println!("INR    L"),
-	0x2D => println!("DCR    L"),
-	0x2E => println!("MVI    L, ${op1:02X}"),
-	0x2F => println!("CMA"),
-	0x30 => println!("NOP"),
-	0x31 => println!("LXI    SP, ${opw:04X}"),
-	0x32 => println!("STA    ${opw:04X}"),
-	0x33 => println!("INX    SP"),
-	0x34 => println!("INR    M"),
-	0x35 => println!("DCR    M"),
-	0x36 => println!("MVI    M, ${op1:02X}"),
-	0x37 => println!("STC"),
-	0x38 => println!("NOP"),
-	0x39 => println!("DAD    SP"),
-	0x3A => println!("LDA    ${opw:04X}"),
-	0x3B => println!("DCX    SP"),
-	0x3C => println!("INR    A"),
-	0x3D => println!("DCR    A"),
-	0x3E => println!("MVI    A, ${op1:02X}"),
-	0x3F => println!("CMC"),
-	0x40 => println!("MOV    B, B"),
-	0x41 => println!("MOV    B, C"),
-	0x42 => println!("MOV    B, D"),
-	0x43 => println!("MOV    B, E"),
-	0x44 => println!("MOV    B, H"),
-	0x45 => println!("MOV    B, L"),
-	0x46 => println!("MOV    B, M"),
-	0x47 => println!("MOV    B, A"),
-	0x48 => println!("MOV    C, B"),
-	0x49 => println!("MOV    C, C"),
-	0x4A => println!("MOV    C, D"),
-	0x4B => println!("MOV    C, E"),
-	0x4C => println!("MOV    C, H"),
-	0x4D => println!("MOV    C, L"),
-	0x4E => println!("MOV    C, M"),
-	0x4F => println!("MOV    C, A"),
-	0x50 => println!("MOV    D, B"),
-	0x51 => println!("MOV    D, C"),
-	0x52 => println!("MOV    D, D"),
-	0x53 => println!("MOV    D, E"),
-	0x54 => println!("MOV    D, H"),
-	0x55 => println!("MOV    D, L"),
-	0x56 => println!("MOV    D, M"),
-	0x57 => println!("MOV    D, A"),
-	0x58 => println!("MOV    E, B"),
-	0x59 => println!("MOV    E, C"),
-	0x5A => println!("MOV    E, D"),
-	0x5B => println!("MOV    E, E"),
-	0x5C => println!("MOV    E, H"),
-	0x5D => println!("MOV    E, L"),
-	0x5E => println!("MOV    E, M"),
-	0x5F => println!("MOV    E, A"),
-	0x60 => println!("MOV    H, B"),
-	0x61 => println!("MOV    H, C"),
-	0x62 => println!("MOV    H, D"),
-	0x63 => println!("MOV    H, E"),
-	0x64 => println!("MOV    H, H"),
-	0x65 => println!("MOV    H, L"),
-	0x66 => println!("MOV    H, M"),
-	0x67 => println!("MOV    H, A"),
-	0x68 => println!("MOV    L, B"),
-	0x69 => println!("MOV    L, C"),
-	0x6A => println!("MOV    L, D"),
-	0x6B => println!("MOV    L, E"),
-	0x6C => println!("MOV    L, H"),
-	0x6D => println!("MOV    L, L"),
-	0x6E => println!("MOV    L, M"),
-	0x6F => println!("MOV    L, A"),
-	0x70 => println!("MOV    M, B"),
-	0x71 => println!("MOV    M, C"),
-	0x72 => println!("MOV    M, D"),
-	0x73 => println!("MOV    M, E"),
-	0x74 => println!("MOV    M, H"),
-	0x75 => println!("MOV    M, L"),
-	0x76 => println!("HLT"),
-	0x77 => println!("MOV    M, A"),
-	0x78 => println!("MOV    A, B"),
-	0x79 => println!("MOV    A, C"),
-	0x7A => println!("MOV    A, D"),
-	0x7B => println!("MOV    A, E"),
-	0x7C => println!("MOV    A, H"),
-	0x7D => println!("MOV    A, L"),
-	0x7E => println!("MOV    A, M"),
-	0x7F => println!("MOV    A, A"),
-	0x80 => println!("ADD    B"),
-	0x81 => println!("ADD    C"),
-	0x82 => println!("ADD    D"),
-	0x83 => println!("ADD    E"),
-	0x84 => println!("ADD    H"),
-	0x85 => println!("ADD    L"),
-	0x86 => println!("ADD    M"),
-	0x87 => println!("ADD    A"),
-	0x88 => println!("ADC    B"),
-	0x89 => println!("ADC    C"),
-	0x8A => println!("ADC    D"),
-	0x8B => println!("ADC    E"),
-	0x8C => println!("ADC    H"),
-	0x8D => println!("ADC    L"),
-	0x8E => println!("ADC    M"),
-	0x8F => println!("ADC    A"),
-	0x90 => println!("SUB    B"),
-	0x91 => println!("SUB    C"),
-	0x92 => println!("SUB    D"),
-	0x93 => println!("SUB    E"),
-	0x94 => println!("SUB    H"),
-	0x95 => println!("SUB    L"),
-	0x96 => println!("SUB    M"),
-	0x97 => println!("SUB    A"),
-	0x98 => println!("SBB    B"),
-	0x99 => println!("SBB    C"),
-	0x9A => println!("SBB    D"),
-	0x9B => println!("SBB    E"),
-	0x9C => println!("SBB    H"),
-	0x9D => println!("SBB    L"),
-	0x9E => println!("SBB    M"),
-	0x9F => println!("SBB    A"),
-	0xA0 => println!("ANA    B"),
-	0xA1 => println!("ANA    C"),
-	0xA2 => println!("ANA    D"),
-	0xA3 => println!("ANA    E"),
-	0xA4 => println!("ANA    H"),
-	0xA5 => println!("ANA    L"),
-	0xA6 => println!("ANA    M"),
-	0xA7 => println!("ANA    A"),
-	0xA8 => println!("XRA    B"),
-	0xA9 => println!("XRA    C"),
-	0xAA => println!("XRA    D"),
-	0xAB => println!("XRA    E"),
-	0xAC => println!("XRA    H"),
-	0xAD => println!("XRA    L"),
-	0xAE => println!("XRA    M"),
-	0xAF => println!("XRA    A"),
-	0xB0 => println!("ORA    B"),
-	0xB1 => println!("ORA    C"),
-	0xB2 => println!("ORA    D"),
-	0xB3 => println!("ORA    E"),
-	0xB4 => println!("ORA    H"),
-	0xB5 => println!("ORA    L"),
-	0xB6 => println!("ORA    M"),
-	0xB7 => println!("ORA    A"),
-	0xB8 => println!("CMP    B"),
-	0xB9 => println!("CMP    C"),
-	0xBA => println!("CMP    D"),
-	0xBB => println!("CMP    E"),
-	0xBC => println!("CMP    H"),
-	0xBD => println!("CMP    L"),
-	0xBE => println!("CMP    M"),
-	0xBF => println!("CMP    A"),
-	0xC0 => println!("RNZ"),
-	0xC1 => println!("POP    B"),
-	0xC2 => println!("JNZ    ${opw:04X}"),
-	0xC3 => println!("JMP    ${opw:04X}"),
-	0xC4 => println!("CNZ    ${opw:04X}"),
-	0xC5 => println!("PUSH   B"),
-	0xC6 => println!("ADI    ${op1:02X}"),
-	0xC7 => println!("RST    0"),
-	0xC8 => println!("RZ"),
-	0xC9 => println!("RET"),
-	0xCA => println!("JZ     ${opw:04X}"),
-	0xCB => println!("JMP    ${opw:04X}"),
-	0xCC => println!("CZ     ${opw:04X}"),
-	0xCD => println!("CALL   ${opw:04X}"),
-	0xCE => println!("ACI    ${op1:02X}"),
-	0xCF => println!("RST    1"),
-	0xD0 => println!("RNC"),
-	0xD1 => println!("POP    D"),
-	0xD2 => println!("JNC    ${opw:04X}"),
-	0xD3 => println!("OUT    ${op1:02X}"),
-	0xD4 => println!("CNC    ${opw:04X}"),
-	0xD5 => println!("PUSH   D"),
-	0xD6 => println!("SUI    ${op1:02X}"),
-	0xD7 => println!("RST    2"),
-	0xD8 => println!("RC"),
-	0xD9 => println!("RET"),
-	0xDA => println!("JC     ${opw:04X}"),
-	0xDB => println!("IN     ${op1:02X}"),
-	0xDC => println!("CC     ${opw:04X}"),
-	0xDD => println!("CALL   ${opw:04X}"),
-	0xDE => println!("SBI    ${op1:02X}"),
-	0xDF => println!("RST    3"),
-	0xE0 => println!("RPO"),
-	0xE1 => println!("POP    H"),
-	0xE2 => println!("JPO    ${opw:04X}"),
-	0xE3 => println!("XTHL"),
-	0xE4 => println!("CPO    ${opw:04X}"),
-	0xE5 => println!("PUSH   H"),
-	0xE6 => println!("ANI    ${op1:02X}"),
-	0xE7 => println!("RST    4"),
-	0xE8 => println!("RPE"),
-	0xE9 => println!("PCHL"),
-	0xEA => println!("JPE    ${opw:04X}"),
-	0xEB => println!("XCHG"),
-	0xEC => println!("CPE    ${opw:04X}"),
-	0xED => println!("CALL   ${opw:04X}"),
-	0xEE => println!("XRI    ${op1:02X}"),
-	0xEF => println!("RST    5"),
-	0xF0 => println!("RP"),
-	0xF1 => println!("POP    PSW"),
-	0xF2 => println!("JP     ${opw:04X}"),
-	0xF3 => println!("DI"),
-	0xF4 => println!("CP     ${opw:04X}"),
-	0xF5 => println!("PUSH   PSW"),
-	0xF6 => println!("ORI    ${op1:02X}"),
-	0xF7 => println!("RST    6"),
-	0xF8 => println!("RM"),
-	0xF9 => println!("SPHL"),
-	0xFA => println!("JM     ${opw:04X}"),
-	0xFB => println!("EI"),
-	0xFC => println!("CM     ${opw:04X}"),
-	0xFD => println!("CALL   ${opw:04X}"),
-	0xFE => println!("CPI    ${op1:02X}"),
-	0xFF => println!("RST    7"),
-    };
-}
-
-fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
+fn disas(pc: u16, opcode: u8, op1: u8, opw: u16) {
     print!("{:04X} ", pc);
     match opcode {
 	0x00 => println!("NOP"),
@@ -900,7 +641,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0x05 => println!("DEC B"),
 	0x06 => println!("LD B, ${op1:02X}"),
 	0x07 => println!("RLCA"),
-	0x08 => println!("*NOP"),
+	0x08 => println!("EX AF, AF'"),
 	0x09 => println!("ADD HL, BC"),
 	0x0A => println!("LD A, [BC]"),
 	0x0B => println!("DEC BC"),
@@ -908,7 +649,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0x0D => println!("DEC C"),
 	0x0E => println!("LD C, ${op1:02X}"),
 	0x0F => println!("RRCA"),
-	0x10 => println!("*NOP"),
+	0x10 => println!("DJNZ ${op1:02X}"), //todo calculate target, same for JRs
 	0x11 => println!("LD DE, ${opw:04X}"),
 	0x12 => println!("LD [DE], A"),
 	0x13 => println!("INC DE"),
@@ -916,7 +657,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0x15 => println!("DEC D"),
 	0x16 => println!("LD D, ${op1:02X}"),
 	0x17 => println!("RLA"),
-	0x18 => println!("*NOP"),
+	0x18 => println!("JR ${op1:02X}"),
 	0x19 => println!("ADD HL, DE"),
 	0x1A => println!("LD A, [DE]"),
 	0x1B => println!("DEC DE"),
@@ -924,7 +665,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0x1D => println!("DEC E"),
 	0x1E => println!("LD E, ${op1:02X}"),
 	0x1F => println!("RRA"),
-	0x20 => println!("*NOP"),
+	0x20 => println!("JR NZ, ${op1:02X}"),
 	0x21 => println!("LD HL, ${opw:04X}"),
 	0x22 => println!("LD [${opw:04X}], HL"),
 	0x23 => println!("INC HL"),
@@ -932,7 +673,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0x25 => println!("DEC H"),
 	0x26 => println!("LD H, ${op1:02X}"),
 	0x27 => println!("DAA"),
-	0x28 => println!("*NOP"),
+	0x28 => println!("JR Z, ${op1:02X}"),
 	0x29 => println!("ADD HL, HL"),
 	0x2A => println!("LD HL, [${opw:04X}]"),
 	0x2B => println!("DEC HL"),
@@ -940,7 +681,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0x2D => println!("DEC L"),
 	0x2E => println!("LD L, ${op1:02X}"),
 	0x2F => println!("CPL"),
-	0x30 => println!("*NOP"),
+	0x30 => println!("JR NC, ${op1:02X}"),
 	0x31 => println!("LD SP, ${opw:04X}"),
 	0x32 => println!("LD [${opw:04X}], A"),
 	0x33 => println!("INC SP"),
@@ -948,7 +689,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0x35 => println!("DEC [HL]"),
 	0x36 => println!("LD [HL], ${op1:02X}"),
 	0x37 => println!("SCF"),
-	0x38 => println!("*NOP"),
+	0x38 => println!("JR C, ${op1:02X}"),
 	0x39 => println!("ADD HL, SP"),
 	0x3A => println!("LD A, [${opw:04X}]"),
 	0x3B => println!("DEC SP"),
@@ -1095,7 +836,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0xC8 => println!("RET Z"),
 	0xC9 => println!("RET"),
 	0xCA => println!("JP Z, ${opw:04X}"),
-	0xCB => println!("*JP ${opw:04X}"),
+	0xCB => println!("prefix cb"),
 	0xCC => println!("CALL Z, ${opw:04X}"),
 	0xCD => println!("CALL ${opw:04X}"),
 	0xCE => println!("ADC A, ${op1:02X}"),
@@ -1109,17 +850,17 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0xD6 => println!("SUB A, ${op1:02X}"),
 	0xD7 => println!("RST $10"),
 	0xD8 => println!("RET C"),
-	0xD9 => println!("*RET"),
+	0xD9 => println!("EXX"),
 	0xDA => println!("JP C, ${opw:04X}"),
 	0xDB => println!("IN ${op1:02X}"),
 	0xDC => println!("CALL C, ${opw:04X}"),
-	0xDD => println!("*CALL ${opw:04X}"),
+	0xDD => println!("prefix dd"),
 	0xDE => println!("SBC A, ${op1:02X}"),
 	0xDF => println!("RST $18"),
 	0xE0 => println!("RET PO"),
 	0xE1 => println!("POP HL"),
 	0xE2 => println!("JP PO, ${opw:04X}"),
-	0xE3 => println!("XTHL"),
+	0xE3 => println!("LD [SP], HL"),
 	0xE4 => println!("CALL PO, ${opw:04X}"),
 	0xE5 => println!("PUSH HL"),
 	0xE6 => println!("AND A, ${op1:02X}"),
@@ -1127,14 +868,14 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0xE8 => println!("RET PE"),
 	0xE9 => println!("JP HL"),
 	0xEA => println!("JP PE, ${opw:04X}"),
-	0xEB => println!("XCHG"),
+	0xEB => println!("EX DE, HL"),
 	0xEC => println!("CALL PE, ${opw:04X}"),
-	0xED => println!("*CALL ${opw:04X}"),
+	0xED => println!("prefix ed"),
 	0xEE => println!("XOR A, ${op1:02X}"),
 	0xEF => println!("RST $28"),
 	0xF0 => println!("RET P"),
 	0xF1 => println!("POP AF"),
-	0xF2 => println!("*JP ${opw:04X}"),
+	0xF2 => println!("JP P, ${opw:04X}"),
 	0xF3 => println!("DI"),
 	0xF4 => println!("CALL P, ${opw:04X}"),
 	0xF5 => println!("PUSH AF"),
@@ -1145,7 +886,7 @@ fn disas_zilog(pc: u16, opcode: u8, op1: u8, op2: u8, opw: u16) {
 	0xFA => println!("JP M, ${opw:04X}"),
 	0xFB => println!("EI"),
 	0xFC => println!("CALL M, ${opw:04X}"),
-	0xFD => println!("*CALL ${opw:04X}"),
+	0xFD => println!("prefix fd"),
 	0xFE => println!("CP A, ${op1:02X}"),
 	0xFF => println!("RST $38"),
     };
