@@ -213,18 +213,14 @@ impl Cpu {
     }
 
     fn push_word(&mut self, data: u16) {
-	let hi = ((data & 0xff00) >> 8) as u8;
-	let lo = (data & 0x00ff) as u8;
-	self.bus.write_byte(self.sp.wrapping_sub(1), hi);
-	self.bus.write_byte(self.sp.wrapping_sub(2), lo);
+	self.bus.write_word(self.sp.wrapping_sub(2), data);
 	self.sp = self.sp.wrapping_sub(2);
     }
 
     fn pop_word(&mut self) -> u16 {
-	let lo = self.bus.read_byte(self.sp);
-	let hi = self.bus.read_byte(self.sp.wrapping_add(1));
+	let tmp = self.bus.read_word(self.sp);
 	self.sp = self.sp.wrapping_add(2);
-	((hi as u16) << 8) | (lo as u16)
+	tmp
     }
 
     fn movb(&mut self, d: u8, s: u8, hlptr: u16) {
@@ -428,13 +424,11 @@ impl Cpu {
 	    },
 	    0x22 => { //LD (nn), HL
 		let tmp = self.read_rp(2);
-		self.bus.write_byte(opw, (tmp & 0xff) as u8);
-		self.bus.write_byte(opw + 1, ((tmp >> 8) & 0xff) as u8);
+		self.bus.write_word(opw, tmp);
 	    },
 	    0x2a => { //LD HL, (nn)
-		let lo = self.bus.read_byte(opw);
-		let hi = self.bus.read_byte(opw + 1);
-		self.write_rp(2, ((hi as u16) << 8) | lo as u16);
+		let tmp = self.bus.read_word(opw);
+		self.write_rp(2, tmp);
 	    },
 	    0x32 => { //LD (nn), A
 		self.bus.write_byte(opw, self.a);
