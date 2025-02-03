@@ -26,3 +26,9 @@ Cargo.lock
 
 #emacs backup
 *~
+
+#binaries
+*.com
+*.bin
+*.sna
+*.tap

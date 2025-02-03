@@ -9,82 +9,148 @@ struct Instruction {
     //opcode2: u8,
     bytes: u8,
     cycles: u8,
-    mnemonic: &'static str,
 }
 
 macro_rules! instr_set {
-    ($({ $o: expr, $b: expr, $c: expr, $mn: expr }),* $(,)?) => {
+    ($({ $o: expr, $b: expr, $c: expr }),* $(,)?) => {
 	[
-	    $(Instruction { opcode: $o, bytes: $b, cycles: $c, mnemonic: $mn }),*
+	    $(Instruction { opcode: $o, bytes: $b, cycles: $c }),*
 	]
     };
 }
 
 const INSTR_SET_INTEL: [Instruction; 256] = instr_set![
-    {0x00, 1, 4, "NOP"}, {0x01, 3, 10, "LXI"}, {0x02, 1, 7, "STAX"}, {0x03, 1, 5, "INX"},
-    {0x04, 1, 5, "INR"}, {0x05, 1, 5, "DCR"}, {0x06, 2, 7, "MVI"}, {0x07, 1, 4, "RLC"},
-    {0x08, 1, 4, "*NOP"}, {0x09, 1, 10, "DAD"}, {0x0a, 1, 7, "LDAX"}, {0x0b, 1, 5, "DCX"},
-    {0x0c, 1, 5, "INR"}, {0x0d, 1, 5, "DCR"}, {0x0e, 2, 7, "MVI"}, {0x0f, 1, 4, "RRC"},
-    {0x10, 1, 4, "*NOP"}, {0x11, 3, 10, "LXI"}, {0x12, 1, 7, "STAX"}, {0x13, 1, 5, "INX"},
-    {0x14, 1, 5, "INR"}, {0x15, 1, 5, "DCR"}, {0x16, 2, 7, "MVI"}, {0x17, 1, 4, "RAL"},
-    {0x18, 1, 4, "*NOP"}, {0x19, 1, 10, "DAD"}, {0x1a, 1, 7, "LDAX"}, {0x1b, 1, 5, "DCX"},
-    {0x1c, 1, 5, "INR"}, {0x1d, 1, 5, "DCR"}, {0x1e, 2, 7, "MVI"}, {0x1f, 1, 4, "RAR"},
-    {0x20, 1, 4, "*NOP"}, {0x21, 3, 10, "LXI"}, {0x22, 3, 16, "SHLD"}, {0x23, 1, 5, "INX"},
-    {0x24, 1, 5, "INR"}, {0x25, 1, 5, "DCR"}, {0x26, 2, 7, "MVI"}, {0x27, 1, 4, "DAA"},
-    {0x28, 1, 4, "*NOP"}, {0x29, 1, 10, "DAD"}, {0x2a, 3, 16, "LHLD"}, {0x2b, 1, 5, "DCX"},
-    {0x2c, 1, 5, "INR"}, {0x2d, 1, 5, "DCR"}, {0x2e, 2, 7, "MVI"}, {0x2f, 1, 4, "CMA"},
-    {0x30, 1, 4, "*NOP"}, {0x31, 3, 10, "LXI"}, {0x32, 3, 13, "STA"}, {0x33, 1, 5, "INX"},
-    {0x34, 1, 10, "INR"}, {0x35, 1, 10, "DCR"}, {0x36, 2, 10, "MVI"}, {0x37, 1, 4, "STC"},
-    {0x38, 1, 4, "*NOP"}, {0x39, 1, 10, "DAD"}, {0x3a, 3, 13, "LDA"}, {0x3b, 1, 5, "DCX"},
-    {0x3c, 1, 5, "INR"}, {0x3d, 1, 5, "DCR"}, {0x3e, 2, 7, "MVI"}, {0x3f, 1, 4, "CMC"},
-    {0x40, 1, 5, "MOV"}, {0x41, 1, 5, "MOV"}, {0x42, 1, 5, "MOV"}, {0x43, 1, 5, "MOV"},
-    {0x44, 1, 5, "MOV"}, {0x45, 1, 5, "MOV"}, {0x46, 1, 7, "MOV"}, {0x47, 1, 5, "MOV"},
-    {0x48, 1, 5, "MOV"}, {0x49, 1, 5, "MOV"}, {0x4a, 1, 5, "MOV"}, {0x4b, 1, 5, "MOV"},
-    {0x4c, 1, 5, "MOV"}, {0x4d, 1, 5, "MOV"}, {0x4e, 1, 7, "MOV"}, {0x4f, 1, 5, "MOV"},
-    {0x50, 1, 5, "MOV"}, {0x51, 1, 5, "MOV"}, {0x52, 1, 5, "MOV"}, {0x53, 1, 5, "MOV"},
-    {0x54, 1, 5, "MOV"}, {0x55, 1, 5, "MOV"}, {0x56, 1, 7, "MOV"}, {0x57, 1, 5, "MOV"},
-    {0x58, 1, 5, "MOV"}, {0x59, 1, 5, "MOV"}, {0x5a, 1, 5, "MOV"}, {0x5b, 1, 5, "MOV"},
-    {0x5c, 1, 5, "MOV"}, {0x5d, 1, 5, "MOV"}, {0x5e, 1, 7, "MOV"}, {0x5f, 1, 5, "MOV"},
-    {0x60, 1, 5, "MOV"}, {0x61, 1, 5, "MOV"}, {0x62, 1, 5, "MOV"}, {0x63, 1, 5, "MOV"},
-    {0x64, 1, 5, "MOV"}, {0x65, 1, 5, "MOV"}, {0x66, 1, 7, "MOV"}, {0x67, 1, 5, "MOV"},
-    {0x68, 1, 5, "MOV"}, {0x69, 1, 5, "MOV"}, {0x6a, 1, 5, "MOV"}, {0x6b, 1, 5, "MOV"},
-    {0x6c, 1, 5, "MOV"}, {0x6d, 1, 5, "MOV"}, {0x6e, 1, 7, "MOV"}, {0x6f, 1, 5, "MOV"},
-    {0x70, 1, 7, "MOV"}, {0x71, 1, 7, "MOV"}, {0x72, 1, 7, "MOV"}, {0x73, 1, 7, "MOV"},
-    {0x74, 1, 7, "MOV"}, {0x75, 1, 7, "MOV"}, {0x76, 1, 7, "HLT"}, {0x77, 1, 7, "MOV"},
-    {0x78, 1, 5, "MOV"}, {0x79, 1, 5, "MOV"}, {0x7a, 1, 5, "MOV"}, {0x7b, 1, 5, "MOV"},
-    {0x7c, 1, 5, "MOV"}, {0x7d, 1, 5, "MOV"}, {0x7e, 1, 7, "MOV"}, {0x7f, 1, 5, "MOV"},
-    {0x80, 1, 4, "ADD"}, {0x81, 1, 4, "ADD"}, {0x82, 1, 4, "ADD"}, {0x83, 1, 4, "ADD"},
-    {0x84, 1, 4, "ADD"}, {0x85, 1, 4, "ADD"}, {0x86, 1, 7, "ADD"}, {0x87, 1, 4, "ADD"},
-    {0x88, 1, 4, "ADC"}, {0x89, 1, 4, "ADC"}, {0x8a, 1, 4, "ADC"}, {0x8b, 1, 4, "ADC"},
-    {0x8c, 1, 4, "ADC"}, {0x8d, 1, 4, "ADC"}, {0x8e, 1, 7, "ADC"}, {0x8f, 1, 4, "ADC"},
-    {0x90, 1, 4, "SUB"}, {0x91, 1, 4, "SUB"}, {0x92, 1, 4, "SUB"}, {0x93, 1, 4, "SUB"},
-    {0x94, 1, 4, "SUB"}, {0x95, 1, 4, "SUB"}, {0x96, 1, 7, "SUB"}, {0x97, 1, 4, "SUB"},
-    {0x98, 1, 4, "SBB"}, {0x99, 1, 4, "SBB"}, {0x9a, 1, 4, "SBB"}, {0x9b, 1, 4, "SBB"},
-    {0x9c, 1, 4, "SBB"}, {0x9d, 1, 4, "SBB"}, {0x9e, 1, 7, "SBB"}, {0x9f, 1, 4, "SBB"},
-    {0xa0, 1, 4, "ANA"}, {0xa1, 1, 4, "ANA"}, {0xa2, 1, 4, "ANA"}, {0xa3, 1, 4, "ANA"},
-    {0xa4, 1, 4, "ANA"}, {0xa5, 1, 4, "ANA"}, {0xa6, 1, 7, "ANA"}, {0xa7, 1, 4, "ANA"},
-    {0xa8, 1, 4, "XRA"}, {0xa9, 1, 4, "XRA"}, {0xaa, 1, 4, "XRA"}, {0xab, 1, 4, "XRA"},
-    {0xac, 1, 4, "XRA"}, {0xad, 1, 4, "XRA"}, {0xae, 1, 7, "XRA"}, {0xaf, 1, 4, "XRA"},
-    {0xb0, 1, 4, "ORA"}, {0xb1, 1, 4, "ORA"}, {0xb2, 1, 4, "ORA"}, {0xb3, 1, 4, "ORA"},
-    {0xb4, 1, 4, "ORA"}, {0xb5, 1, 4, "ORA"}, {0xb6, 1, 7, "ORA"}, {0xb7, 1, 4, "ORA"},
-    {0xb8, 1, 4, "CMP"}, {0xb9, 1, 4, "CMP"}, {0xba, 1, 4, "CMP"}, {0xbb, 1, 4, "CMP"},
-    {0xbc, 1, 4, "CMP"}, {0xbd, 1, 4, "CMP"}, {0xbe, 1, 7, "CMP"}, {0xbf, 1, 4, "CMP"},
-    {0xc0, 1, 5, "RNZ"}, {0xc1, 1, 10, "POP"}, {0xc2, 3, 10, "JNZ"}, {0xc3, 3, 10, "JMP"},
-    {0xc4, 3, 11, "CNZ"}, {0xc5, 1, 11, "PUSH"}, {0xc6, 2, 7, "ADI"}, {0xc7, 1, 11, "RST"},
-    {0xc8, 1, 5, "RZ"}, {0xc9, 1, 10, "RET"}, {0xca, 3, 10, "JZ"}, {0xcb, 3, 10, "*JMP"},
-    {0xcc, 3, 11, "CZ"}, {0xcd, 3, 17, "CALL"}, {0xce, 2, 7, "ACI"}, {0xcf, 1, 11, "RST"},
-    {0xd0, 1, 5, "RNC"}, {0xd1, 1, 10, "POP"}, {0xd2, 3, 10, "JNC"}, {0xd3, 2, 10, "OUT"},
-    {0xd4, 3, 11, "CNC"}, {0xd5, 1, 11, "PUSH"}, {0xd6, 2, 7, "SUI"}, {0xd7, 1, 11, "RST"},
-    {0xd8, 1, 5, "RC"}, {0xd9, 1, 10, "*RET"}, {0xda, 3, 10, "JC"}, {0xdb, 2, 10, "IN"},
-    {0xdc, 3, 11, "CC"}, {0xdd, 3, 17, "*CALL"}, {0xde, 2, 7, "SBI"}, {0xdf, 1, 11, "RST"},
-    {0xe0, 1, 5, "RPO"}, {0xe1, 1, 10, "POP"}, {0xe2, 3, 10, "JPO"}, {0xe3, 1, 18, "XTHL"},
-    {0xe4, 3, 11, "CPO"}, {0xe5, 1, 11, "PUSH"}, {0xe6, 2, 7, "ANI"}, {0xe7, 1, 11, "RST"},
-    {0xe8, 1, 5, "RPE"}, {0xe9, 1, 5, "PCHL"}, {0xea, 3, 10, "JPE"}, {0xeb, 1, 5, "XCHG"},
-    {0xec, 3, 11, "CPE"}, {0xed, 3, 17, "*CALL"}, {0xee, 2, 7, "XRI"}, {0xef, 1, 11, "RST"},
-    {0xf0, 1, 5, "RP"}, {0xf1, 1, 10, "POP"}, {0xf2, 3, 10, "JP"}, {0xf3, 1, 4, "DI"},
-    {0xf4, 3, 11, "CP"}, {0xf5, 1, 11, "PUSH"}, {0xf6, 2, 7, "ORI"}, {0xf7, 1, 11, "RST"},
-    {0xf8, 1, 5, "RM"}, {0xf9, 1, 5, "SPHL"}, {0xfa, 3, 10, "JM"}, {0xfb, 1, 4, "EI"},
-    {0xfc, 3, 11, "CM"}, {0xfd, 3, 17, "*CALL"}, {0xfe, 2, 7, "CPI"}, {0xff, 1, 11, "RST"},
+    {0x00, 1, 4}, {0x01, 3, 10}, {0x02, 1, 7}, {0x03, 1, 5},
+    {0x04, 1, 5}, {0x05, 1, 5}, {0x06, 2, 7}, {0x07, 1, 4},
+    {0x08, 1, 4}, {0x09, 1, 10}, {0x0a, 1, 7}, {0x0b, 1, 5},
+    {0x0c, 1, 5}, {0x0d, 1, 5}, {0x0e, 2, 7}, {0x0f, 1, 4},
+    {0x10, 1, 4}, {0x11, 3, 10}, {0x12, 1, 7}, {0x13, 1, 5},
+    {0x14, 1, 5}, {0x15, 1, 5}, {0x16, 2, 7}, {0x17, 1, 4},
+    {0x18, 1, 4}, {0x19, 1, 10}, {0x1a, 1, 7}, {0x1b, 1, 5},
+    {0x1c, 1, 5}, {0x1d, 1, 5}, {0x1e, 2, 7}, {0x1f, 1, 4},
+    {0x20, 1, 4}, {0x21, 3, 10}, {0x22, 3, 16}, {0x23, 1, 5},
+    {0x24, 1, 5}, {0x25, 1, 5}, {0x26, 2, 7}, {0x27, 1, 4},
+    {0x28, 1, 4}, {0x29, 1, 10}, {0x2a, 3, 16}, {0x2b, 1, 5},
+    {0x2c, 1, 5}, {0x2d, 1, 5}, {0x2e, 2, 7}, {0x2f, 1, 4},
+    {0x30, 1, 4}, {0x31, 3, 10}, {0x32, 3, 13}, {0x33, 1, 5},
+    {0x34, 1, 10}, {0x35, 1, 10}, {0x36, 2, 10}, {0x37, 1, 4},
+    {0x38, 1, 4}, {0x39, 1, 10}, {0x3a, 3, 13}, {0x3b, 1, 5},
+    {0x3c, 1, 5}, {0x3d, 1, 5}, {0x3e, 2, 7}, {0x3f, 1, 4},
+    {0x40, 1, 5}, {0x41, 1, 5}, {0x42, 1, 5}, {0x43, 1, 5},
+    {0x44, 1, 5}, {0x45, 1, 5}, {0x46, 1, 7}, {0x47, 1, 5},
+    {0x48, 1, 5}, {0x49, 1, 5}, {0x4a, 1, 5}, {0x4b, 1, 5},
+    {0x4c, 1, 5}, {0x4d, 1, 5}, {0x4e, 1, 7}, {0x4f, 1, 5},
+    {0x50, 1, 5}, {0x51, 1, 5}, {0x52, 1, 5}, {0x53, 1, 5},
+    {0x54, 1, 5}, {0x55, 1, 5}, {0x56, 1, 7}, {0x57, 1, 5},
+    {0x58, 1, 5}, {0x59, 1, 5}, {0x5a, 1, 5}, {0x5b, 1, 5},
+    {0x5c, 1, 5}, {0x5d, 1, 5}, {0x5e, 1, 7}, {0x5f, 1, 5},
+    {0x60, 1, 5}, {0x61, 1, 5}, {0x62, 1, 5}, {0x63, 1, 5},
+    {0x64, 1, 5}, {0x65, 1, 5}, {0x66, 1, 7}, {0x67, 1, 5},
+    {0x68, 1, 5}, {0x69, 1, 5}, {0x6a, 1, 5}, {0x6b, 1, 5},
+    {0x6c, 1, 5}, {0x6d, 1, 5}, {0x6e, 1, 7}, {0x6f, 1, 5},
+    {0x70, 1, 7}, {0x71, 1, 7}, {0x72, 1, 7}, {0x73, 1, 7},
+    {0x74, 1, 7}, {0x75, 1, 7}, {0x76, 1, 7}, {0x77, 1, 7},
+    {0x78, 1, 5}, {0x79, 1, 5}, {0x7a, 1, 5}, {0x7b, 1, 5},
+    {0x7c, 1, 5}, {0x7d, 1, 5}, {0x7e, 1, 7}, {0x7f, 1, 5},
+    {0x80, 1, 4}, {0x81, 1, 4}, {0x82, 1, 4}, {0x83, 1, 4},
+    {0x84, 1, 4}, {0x85, 1, 4}, {0x86, 1, 7}, {0x87, 1, 4},
+    {0x88, 1, 4}, {0x89, 1, 4}, {0x8a, 1, 4}, {0x8b, 1, 4},
+    {0x8c, 1, 4}, {0x8d, 1, 4}, {0x8e, 1, 7}, {0x8f, 1, 4},
+    {0x90, 1, 4}, {0x91, 1, 4}, {0x92, 1, 4}, {0x93, 1, 4},
+    {0x94, 1, 4}, {0x95, 1, 4}, {0x96, 1, 7}, {0x97, 1, 4},
+    {0x98, 1, 4}, {0x99, 1, 4}, {0x9a, 1, 4}, {0x9b, 1, 4},
+    {0x9c, 1, 4}, {0x9d, 1, 4}, {0x9e, 1, 7}, {0x9f, 1, 4},
+    {0xa0, 1, 4}, {0xa1, 1, 4}, {0xa2, 1, 4}, {0xa3, 1, 4},
+    {0xa4, 1, 4}, {0xa5, 1, 4}, {0xa6, 1, 7}, {0xa7, 1, 4},
+    {0xa8, 1, 4}, {0xa9, 1, 4}, {0xaa, 1, 4}, {0xab, 1, 4},
+    {0xac, 1, 4}, {0xad, 1, 4}, {0xae, 1, 7}, {0xaf, 1, 4},
+    {0xb0, 1, 4}, {0xb1, 1, 4}, {0xb2, 1, 4}, {0xb3, 1, 4},
+    {0xb4, 1, 4}, {0xb5, 1, 4}, {0xb6, 1, 7}, {0xb7, 1, 4},
+    {0xb8, 1, 4}, {0xb9, 1, 4}, {0xba, 1, 4}, {0xbb, 1, 4},
+    {0xbc, 1, 4}, {0xbd, 1, 4}, {0xbe, 1, 7}, {0xbf, 1, 4},
+    {0xc0, 1, 5}, {0xc1, 1, 10}, {0xc2, 3, 10}, {0xc3, 3, 10},
+    {0xc4, 3, 11}, {0xc5, 1, 11}, {0xc6, 2, 7}, {0xc7, 1, 11},
+    {0xc8, 1, 5}, {0xc9, 1, 10}, {0xca, 3, 10}, {0xcb, 3, 10},
+    {0xcc, 3, 11}, {0xcd, 3, 17}, {0xce, 2, 7}, {0xcf, 1, 11},
+    {0xd0, 1, 5}, {0xd1, 1, 10}, {0xd2, 3, 10}, {0xd3, 2, 10},
+    {0xd4, 3, 11}, {0xd5, 1, 11}, {0xd6, 2, 7}, {0xd7, 1, 11},
+    {0xd8, 1, 5}, {0xd9, 1, 10}, {0xda, 3, 10}, {0xdb, 2, 10},
+    {0xdc, 3, 11}, {0xdd, 3, 17}, {0xde, 2, 7}, {0xdf, 1, 11},
+    {0xe0, 1, 5}, {0xe1, 1, 10}, {0xe2, 3, 10}, {0xe3, 1, 18},
+    {0xe4, 3, 11}, {0xe5, 1, 11}, {0xe6, 2, 7}, {0xe7, 1, 11},
+    {0xe8, 1, 5}, {0xe9, 1, 5}, {0xea, 3, 10}, {0xeb, 1, 5},
+    {0xec, 3, 11}, {0xed, 3, 17}, {0xee, 2, 7}, {0xef, 1, 11},
+    {0xf0, 1, 5}, {0xf1, 1, 10}, {0xf2, 3, 10}, {0xf3, 1, 4},
+    {0xf4, 3, 11}, {0xf5, 1, 11}, {0xf6, 2, 7}, {0xf7, 1, 11},
+    {0xf8, 1, 5}, {0xf9, 1, 5}, {0xfa, 3, 10}, {0xfb, 1, 4},
+    {0xfc, 3, 11}, {0xfd, 3, 17}, {0xfe, 2, 7}, {0xff, 1, 11},
+];
+
+const ED_SET: [Instruction; 256] = instr_set![
+    {0x00, 1, 4}, {0x01, 3, 10}, {0x02, 1, 7}, {0x03, 1, 5},
+    {0x04, 1, 5}, {0x05, 1, 5}, {0x06, 2, 7}, {0x07, 1, 4},
+    {0x08, 1, 4}, {0x09, 1, 10}, {0x0a, 1, 7}, {0x0b, 1, 5},
+    {0x0c, 1, 5}, {0x0d, 1, 5}, {0x0e, 2, 7}, {0x0f, 1, 4},
+    {0x10, 1, 4}, {0x11, 3, 10}, {0x12, 1, 7}, {0x13, 1, 5},
+    {0x14, 1, 5}, {0x15, 1, 5}, {0x16, 2, 7}, {0x17, 1, 4},
+    {0x18, 1, 4}, {0x19, 1, 10}, {0x1a, 1, 7}, {0x1b, 1, 5},
+    {0x1c, 1, 5}, {0x1d, 1, 5}, {0x1e, 2, 7}, {0x1f, 1, 4},
+    {0x20, 1, 4}, {0x21, 3, 10}, {0x22, 3, 16}, {0x23, 1, 5},
+    {0x24, 1, 5}, {0x25, 1, 5}, {0x26, 2, 7}, {0x27, 1, 4},
+    {0x28, 1, 4}, {0x29, 1, 10}, {0x2a, 3, 16}, {0x2b, 1, 5},
+    {0x2c, 1, 5}, {0x2d, 1, 5}, {0x2e, 2, 7}, {0x2f, 1, 4},
+    {0x30, 1, 4}, {0x31, 3, 10}, {0x32, 3, 13}, {0x33, 1, 5},
+    {0x34, 1, 10}, {0x35, 1, 10}, {0x36, 2, 10}, {0x37, 1, 4},
+    {0x38, 1, 4}, {0x39, 1, 10}, {0x3a, 3, 13}, {0x3b, 1, 5},
+    {0x3c, 1, 5}, {0x3d, 1, 5}, {0x3e, 2, 7}, {0x3f, 1, 4},
+    {0x40, 2, 12}, {0x41, 2, 12}, {0x42, 2, 15}, {0x43, 4, 20},
+    {0x44, 2, 8}, {0x45, 2, 14}, {0x46, 2, 8}, {0x47, 2, 9},
+    {0x48, 2, 5}, {0x49, 2, 5}, {0x4a, 2, 5}, {0x4b, 2, 5},
+    {0x4c, 2, 5}, {0x4d, 2, 5}, {0x4e, 2, 7}, {0x4f, 2, 5},
+    {0x50, 1, 5}, {0x51, 1, 5}, {0x52, 1, 5}, {0x53, 1, 5},
+    {0x54, 1, 5}, {0x55, 1, 5}, {0x56, 1, 7}, {0x57, 1, 5},
+    {0x58, 1, 5}, {0x59, 1, 5}, {0x5a, 1, 5}, {0x5b, 1, 5},
+    {0x5c, 1, 5}, {0x5d, 1, 5}, {0x5e, 1, 7}, {0x5f, 1, 5},
+    {0x60, 1, 5}, {0x61, 1, 5}, {0x62, 1, 5}, {0x63, 1, 5},
+    {0x64, 1, 5}, {0x65, 1, 5}, {0x66, 1, 7}, {0x67, 1, 5},
+    {0x68, 1, 5}, {0x69, 1, 5}, {0x6a, 1, 5}, {0x6b, 1, 5},
+    {0x6c, 1, 5}, {0x6d, 1, 5}, {0x6e, 1, 7}, {0x6f, 1, 5},
+    {0x70, 1, 7}, {0x71, 1, 7}, {0x72, 1, 7}, {0x73, 1, 7},
+    {0x74, 1, 7}, {0x75, 1, 7}, {0x76, 1, 7}, {0x77, 1, 7},
+    {0x78, 1, 5}, {0x79, 1, 5}, {0x7a, 1, 5}, {0x7b, 1, 5},
+    {0x7c, 1, 5}, {0x7d, 1, 5}, {0x7e, 1, 7}, {0x7f, 1, 5},
+    {0x80, 1, 4}, {0x81, 1, 4}, {0x82, 1, 4}, {0x83, 1, 4},
+    {0x84, 1, 4}, {0x85, 1, 4}, {0x86, 1, 7}, {0x87, 1, 4},
+    {0x88, 1, 4}, {0x89, 1, 4}, {0x8a, 1, 4}, {0x8b, 1, 4},
+    {0x8c, 1, 4}, {0x8d, 1, 4}, {0x8e, 1, 7}, {0x8f, 1, 4},
+    {0x90, 1, 4}, {0x91, 1, 4}, {0x92, 1, 4}, {0x93, 1, 4},
+    {0x94, 1, 4}, {0x95, 1, 4}, {0x96, 1, 7}, {0x97, 1, 4},
+    {0x98, 1, 4}, {0x99, 1, 4}, {0x9a, 1, 4}, {0x9b, 1, 4},
+    {0x9c, 1, 4}, {0x9d, 1, 4}, {0x9e, 1, 7}, {0x9f, 1, 4},
+    {0xa0, 2, 16}, {0xa1, 1, 4}, {0xa2, 1, 4}, {0xa3, 1, 4},
+    {0xa4, 1, 4}, {0xa5, 1, 4}, {0xa6, 1, 7}, {0xa7, 1, 4},
+    {0xa8, 1, 4}, {0xa9, 1, 4}, {0xaa, 1, 4}, {0xab, 1, 4},
+    {0xac, 1, 4}, {0xad, 1, 4}, {0xae, 1, 7}, {0xaf, 1, 4},
+    {0xb0, 2, 16}, {0xb1, 2, 16}, {0xb2, 2, 16}, {0xb3, 2, 16},
+    {0xb4, 1, 4}, {0xb5, 1, 4}, {0xb6, 1, 7}, {0xb7, 1, 4},
+    {0xb8, 1, 4}, {0xb9, 1, 4}, {0xba, 1, 4}, {0xbb, 1, 4},
+    {0xbc, 1, 4}, {0xbd, 1, 4}, {0xbe, 1, 7}, {0xbf, 1, 4},
+    {0xc0, 1, 5}, {0xc1, 1, 10}, {0xc2, 3, 10}, {0xc3, 3, 10},
+    {0xc4, 3, 11}, {0xc5, 1, 11}, {0xc6, 2, 7}, {0xc7, 1, 11},
+    {0xc8, 1, 5}, {0xc9, 1, 10}, {0xca, 3, 10}, {0xcb, 3, 10},
+    {0xcc, 3, 11}, {0xcd, 3, 17}, {0xce, 2, 7}, {0xcf, 1, 11},
+    {0xd0, 1, 5}, {0xd1, 1, 10}, {0xd2, 3, 10}, {0xd3, 2, 10},
+    {0xd4, 3, 11}, {0xd5, 1, 11}, {0xd6, 2, 7}, {0xd7, 1, 11},
+    {0xd8, 1, 5}, {0xd9, 1, 10}, {0xda, 3, 10}, {0xdb, 2, 10},
+    {0xdc, 3, 11}, {0xdd, 3, 17}, {0xde, 2, 7}, {0xdf, 1, 11},
+    {0xe0, 1, 5}, {0xe1, 1, 10}, {0xe2, 3, 10}, {0xe3, 1, 18},
+    {0xe4, 3, 11}, {0xe5, 1, 11}, {0xe6, 2, 7}, {0xe7, 1, 11},
+    {0xe8, 1, 5}, {0xe9, 1, 5}, {0xea, 3, 10}, {0xeb, 1, 5},
+    {0xec, 3, 11}, {0xed, 3, 17}, {0xee, 2, 7}, {0xef, 1, 11},
+    {0xf0, 1, 5}, {0xf1, 1, 10}, {0xf2, 3, 10}, {0xf3, 1, 4},
+    {0xf4, 3, 11}, {0xf5, 1, 11}, {0xf6, 2, 7}, {0xf7, 1, 11},
+    {0xf8, 1, 5}, {0xf9, 1, 5}, {0xfa, 3, 10}, {0xfb, 1, 4},
+    {0xfc, 3, 11}, {0xfd, 3, 17}, {0xfe, 2, 7}, {0xff, 1, 11},
 ];
 
 bitflags::bitflags! {
@@ -123,15 +189,19 @@ pub struct Cpu {
     f: PSW,
     pub iff: bool,
     iff2: bool,
+    im: u8,
     i: u8,
-    pub bus: bus::ZXBus,
+    r: u8,
+    pub bus: bus::CpmBus,
     instr_set: &'static [Instruction; 256],
+    ed_set: &'static [Instruction; 256],
     pub cycles: usize,
     ei_pend: bool,
+    dbg: bool,
 }
 
 impl Cpu {
-    pub fn new() -> Self {
+    pub fn new(dbg: bool) -> Self {
 	Cpu {
 	    a: 0,
 	    b: 0,
@@ -148,11 +218,15 @@ impl Cpu {
 	    f: PSW::empty(),
 	    iff: false,
 	    iff2: false,
+	    im: 0,
 	    i: 0,
-	    bus: bus::ZXBus::new(),
+	    r: 0,
+	    bus: bus::CpmBus::new(),
 	    instr_set: &INSTR_SET_INTEL,
+	    ed_set: &ED_SET,
 	    cycles: 0,
 	    ei_pend: false,
+	    dbg: dbg,
 	}
     }
 
@@ -304,7 +378,9 @@ impl Cpu {
 	    0 => { //RET
 		if cond {
 		    self.pc = self.pop_word();
-		    self.cycles += 6;
+		    if c2 != 8 {
+			self.cycles += 6;
+		    }
 		}
 	    },
 	    1 => { //JMP
@@ -329,6 +405,10 @@ impl Cpu {
     pub fn step(&mut self) -> usize {
 	let oldcycles = self.cycles;
 	let mut opcode: u8 = self.bus.read_byte(self.pc);
+	let op1 = self.bus.read_byte(self.pc.wrapping_add(1));
+	let op2 = self.bus.read_byte(self.pc.wrapping_add(2));
+	let opw = ((op2 as u16) << 8) | op1 as u16;
+	
 	if self.bus.irq && self.iff {
 	    self.pc -= 1; //1 byte will be added later, want to ret back to interrupted instr
 	    self.iff = false;
@@ -342,8 +422,11 @@ impl Cpu {
 	    //after this instruction runs so we have effectively
 	    //gotten the one instruction delay specified in the manual
 	}
-	//todo: decode extended opcodes
-	let instr: &Instruction = &self.instr_set[opcode as usize];
+
+	let instr: &Instruction = match opcode {
+	    0xed => &self.ed_set[op1 as usize],
+	    _ => &self.instr_set[opcode as usize],
+	};
 	self.cycles += instr.cycles as usize;
 	let d_bits = (opcode >> 3) & 7;
 	let s = opcode & 7;
@@ -374,14 +457,12 @@ impl Cpu {
 	    _ => self.a,
 	};
 
-	let op1 = self.bus.read_byte(self.pc.wrapping_add(1));
-	let op2 = self.bus.read_byte(self.pc.wrapping_add(2));
-	let opw = ((op2 as u16) << 8) | op1 as u16;
-
-	//println!("A {:02X} F {:02X} B {:02X} C {:02X} D {:02X} E {:02X} H {:02X} L {:02X} SP {:04X}, CYC: {} ime {}",
-	//	 self.a, self.f.as_u8(), self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.cycles, self.ime);
-	//disas_zilog(self.pc, instr.opcode, op1, op2, opw);
-
+	if self.dbg {
+	    println!("A {:02X} F {:02X} B {:02X} C {:02X} D {:02X} E {:02X} H {:02X} L {:02X} SP {:04X}, CYC: {} iff {}",
+		     self.a, self.f.as_u8(), self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.cycles, self.iff);
+	    disas(self.pc, instr.opcode, op1, opw);
+	}
+	
 	self.pc = self.pc.wrapping_add(instr.bytes as u16);
 
 	match opcode {
@@ -583,15 +664,6 @@ impl Cpu {
 	    0xcb => { //prefix CB
 		todo!("prefix cb");
 	    },
-	    0xdd => { //prefix DD
-		todo!("prefix dd");
-	    },
-	    0xed => { //prefix ED
-		todo!("prefix ed");
-	    },
-	    0xfd => { //prefix fd
-		todo!("prefix fd");
-	    },
 	    0xc0 | 0xc2..=0xc4 | 0xc7..=0xcd | 0xcf |
 	    0xd0 | 0xd2 | 0xd4 | 0xd7 | 0xd8 | 0xda | 0xdc | 0xdf |
 	    0xe0 | 0xe2 | 0xe4 | 0xe7..=0xea | 0xec | 0xef |
@@ -599,10 +671,10 @@ impl Cpu {
 		self.branch((opcode & 6) >> 1, c, opcode & 1, opw);
 	    },
 	    0xd3 => { //OUT (n), A
-		self.bus.write_io_byte(op1, self.a);
+		self.bus.write_io_byte(op1 as u16, self.a);
 	    },
 	    0xdb => { //IN A, (n)
-		self.a = self.bus.read_io_byte(op1);
+		self.a = self.bus.read_io_byte(op1 as u16);
 	    },
 	    0xf3 => { //DI
 		self.iff = false;
@@ -623,6 +695,316 @@ impl Cpu {
 	    },
 	    0xd9 => { //EXX
 		todo!();
+	    },
+	    0xed => { //misc prefix
+		let tmp = self.pc.wrapping_sub(instr.bytes as u16);
+		opcode = self.bus.read_byte(tmp.wrapping_add(1));
+		let oplo = self.bus.read_byte(tmp.wrapping_add(2));
+		let ophi = self.bus.read_byte(tmp.wrapping_add(3));
+		let opw = ((ophi as u16) << 8) | (oplo as u16);
+
+		let d_bits = (opcode >> 3) & 7;
+		let s = opcode & 7;
+		let rp = (opcode >> 4) & 3;
+		let hlptr = self.read_rp(2);
+		
+		let s = match s {
+		    0b000 => self.b,
+		    0b001 => self.c,
+		    0b010 => self.d,
+		    0b011 => self.e,
+		    0b100 => self.h,
+		    0b101 => self.l,
+		    0b110 => self.bus.read_byte(hlptr),
+		    _ => self.a,
+		};
+		
+		let d = match d_bits {
+		    0b000 => self.b,
+		    0b001 => self.c,
+		    0b010 => self.d,
+		    0b011 => self.e,
+		    0b100 => self.h,
+		    0b101 => self.l,
+		    0b110 => self.bus.read_byte(hlptr),
+		    _ => self.a,
+		};
+
+		match opcode {
+		    0x40 | 0x50 | 0x60 |
+		    0x48 | 0x58 | 0x68 | 0x78 => { //16 bit IN
+			let bctmp = self.read_rp(0);
+			let tmp = self.bus.read_io_byte(bctmp);
+
+			match d_bits {
+			    0 => self.b = tmp,
+			    1 => self.c = tmp,
+			    2 => self.d = tmp,
+			    3 => self.e = tmp,
+			    4 => self.h = tmp,
+			    5 => self.l = tmp,
+			    6 => {},
+			    _ => self.a = tmp,
+			};
+		    },
+		    0x41 | 0x51 | 0x61 |
+		    0x49 | 0x59 | 0x69 | 0x79 => { //16 bit OUT
+			let bctmp = self.read_rp(0);
+
+			if d_bits != 6 {
+			    self.bus.write_io_byte(bctmp, d);
+			} else {
+			    self.bus.write_io_byte(bctmp, 0);
+			}
+		    },
+		    0x42 | 0x52 | 0x62 | 0x72 => { //SBC HL, rp
+			let tmp = self.read_rp(2) as u32;
+			let cflag = self.f.contains(PSW::C) as u32;
+			let tmp = tmp.wrapping_sub(self.read_rp(rp) as u32).wrapping_sub(cflag);
+			//todo: flags
+			self.write_rp(2, tmp as u16);
+		    },
+		    0x4a | 0x5a | 0x6a | 0x7a => { //ADC HL, rp
+			let tmp = self.read_rp(2) as u32;
+			let cflag = self.f.contains(PSW::C) as u32;
+			let tmp = tmp.wrapping_add(self.read_rp(rp) as u32).wrapping_add(cflag);
+			//todo: flags
+			self.write_rp(2, tmp as u16);
+		    },
+		    0x43 | 0x53 | 0x63 | 0x73 => { //LD (nn), rp
+			let tmp = self.read_rp(rp);
+			self.bus.write_word(opw, tmp);
+		    },
+		    0x4b | 0x5b | 0x6b | 0x7b => { //LD rp, (nn)
+			let tmp = self.bus.read_word(opw);
+			self.write_rp(rp, tmp);
+		    },
+		    0x46 | 0x56 | 0x5e => { //IM y
+			self.im = d;
+		    },
+		    0x44 => { //NEG
+			self.a = self.a ^ 0x80;
+		    },
+		    0x47 => { //LD I, A
+			self.i = self.a;
+		    },
+		    0x57 => { //LD A, I
+			self.a = self.i;
+		    },
+		    0x4f => { //LD R, A
+			self.r = self.a;
+		    },
+		    0x5f => { //LD A, R
+			self.a = self.r;
+		    },
+		    0x45 => { //RETN
+			self.iff = self.iff2;
+			self.pc = self.pop_word();
+		    },
+		    0x4d => { //RETI
+			self.pc = self.pop_word();
+			//todo interrupt acknowledge stuff
+		    },
+		    0x6f => { //RLD
+			let tmp = self.bus.read_byte(hlptr);
+			let tmp2 = (tmp & 0xf0) >> 4;
+			let tmp = ((tmp & 0xf0) >> 4) | ((tmp & 0x0f) << 4);
+			let tmp3 = self.a & 0x0f;
+			self.a = (self.a & 0xf0) | tmp2;
+			let tmp = (tmp & 0xf0) | tmp3;
+			self.bus.write_byte(hlptr, tmp);
+		    },
+		    0x67 => { //RRD
+			let tmp = self.bus.read_byte(hlptr);
+			let tmplo = tmp & 0x0f;
+			let alo = (self.a & 0x0f) << 4;
+			let tmphi = (tmp & 0xf0) >> 4;
+			let tmp = (tmp & 0xf0) | tmphi;
+			let tmp = (tmp & 0x0f) | alo;
+			self.a = (self.a & 0xf0) | tmplo;
+		    },
+		    0xa0 => { //LDI
+			let hl = self.read_rp(2);
+			let de = self.read_rp(1);
+			let bc = self.read_rp(0);
+			let tmp = self.bus.read_byte(hl);
+			self.bus.write_byte(de, tmp);
+			self.write_rp(1, de.wrapping_add(1));
+			self.write_rp(2, hl.wrapping_add(1));
+			self.write_rp(0, bc.wrapping_sub(1));
+
+			self.f.remove(PSW::H);
+			self.f.remove(PSW::N);
+			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+		    },
+		    0xb0 => { //LDIR
+			let hl = self.read_rp(2);
+			let de = self.read_rp(1);
+			let bc = self.read_rp(0);
+			let tmp = self.bus.read_byte(hl);
+			self.bus.write_byte(de, tmp);
+			self.write_rp(1, de.wrapping_add(1));
+			self.write_rp(2, hl.wrapping_add(1));
+			self.write_rp(0, bc.wrapping_sub(1));
+			
+			self.f.remove(PSW::H);
+			self.f.remove(PSW::N);
+			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+			
+			if bc.wrapping_sub(1) != 0 {
+			    self.pc -= 2;
+			}
+		    },
+		    0xa8 => { //LDD
+			let hl = self.read_rp(2);
+			let de = self.read_rp(1);
+			let bc = self.read_rp(0);
+			let tmp = self.bus.read_byte(hl);
+			self.bus.write_byte(de, tmp);
+			self.write_rp(1, de.wrapping_sub(1));
+			self.write_rp(2, hl.wrapping_sub(1));
+			self.write_rp(0, bc.wrapping_sub(1));
+
+			self.f.remove(PSW::H);
+			self.f.remove(PSW::N);
+			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+		    },
+		    0xb8 => { //LDDR
+			let hl = self.read_rp(2);
+			let de = self.read_rp(1);
+			let bc = self.read_rp(0);
+			let tmp = self.bus.read_byte(hl);
+			self.bus.write_byte(de, tmp);
+			self.write_rp(1, de.wrapping_sub(1));
+			self.write_rp(2, hl.wrapping_sub(1));
+			self.write_rp(0, bc.wrapping_sub(1));
+
+			self.f.remove(PSW::H);
+			self.f.remove(PSW::N);
+			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+
+			if bc.wrapping_sub(1) != 0 {
+			    self.pc -= 2;
+			}
+		    },
+		    0xa1 => { //CPI
+			let tmp = self.bus.read_byte(hlptr);
+			let tmp = self.a.wrapping_sub(tmp);
+			let bc = self.read_rp(0);
+			self.write_rp(0, bc.wrapping_sub(1));
+
+			self.f.set(PSW::S, (tmp & 0x80) != 0);
+			self.f.set(PSW::Z, tmp == 0);
+			//todo H
+			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+			self.f.insert(PSW::N);
+		    },
+		    0xb1 => { //CPIR
+			let tmp = self.bus.read_byte(hlptr);
+			let tmp = self.a.wrapping_sub(tmp);
+			let bc = self.read_rp(0);
+			self.write_rp(0, bc.wrapping_sub(1));
+
+			self.f.set(PSW::S, (tmp & 0x80) != 0);
+			self.f.set(PSW::Z, tmp == 0);
+			//todo H
+			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+			self.f.insert(PSW::N);
+
+			if bc.wrapping_sub(1) != 0 {
+			    self.pc -= 2;
+			}
+		    },
+		    _ => {
+			todo!("unimplemented instruction ED {opcode:02X}");
+		    },
+		};
+	    },
+	    0xfd => { //iy prefix
+		let tmp = self.pc.wrapping_sub(instr.bytes as u16);
+		opcode = self.bus.read_byte(tmp.wrapping_add(1));
+		let oplo = self.bus.read_byte(tmp.wrapping_add(2));
+		let ophi = self.bus.read_byte(tmp.wrapping_add(3));
+		let opw = ((ophi as u16) << 8) | (oplo as u16);
+		
+		let d_bits = (opcode >> 3) & 7;
+		let s = opcode & 7;
+		let rp = (opcode >> 4) & 3;
+		let hlptr = self.read_rp(2);
+		
+		let s = match s {
+		    0b000 => self.b,
+		    0b001 => self.c,
+		    0b010 => self.d,
+		    0b011 => self.e,
+		    0b100 => self.h,
+		    0b101 => self.l,
+		    0b110 => self.bus.read_byte(hlptr),
+		    _ => self.a,
+		};
+		
+		let d = match d_bits {
+		    0b000 => self.b,
+		    0b001 => self.c,
+		    0b010 => self.d,
+		    0b011 => self.e,
+		    0b100 => self.h,
+		    0b101 => self.l,
+		    0b110 => self.bus.read_byte(hlptr),
+		    _ => self.a,
+		};
+
+		match opcode {
+		    0xe1 => { //POP IY
+			self.iy = self.pop_word();
+		    },
+		    _ => {
+			todo!("unimplemented opcode FD {opcode:02X}");
+		    },
+		};
+	    },
+	    0xdd => { //ix prefix
+		let tmp = self.pc.wrapping_sub(instr.bytes as u16);
+		opcode = self.bus.read_byte(tmp.wrapping_add(1));
+		let oplo = self.bus.read_byte(tmp.wrapping_add(2));
+		let ophi = self.bus.read_byte(tmp.wrapping_add(3));
+		let opw = ((ophi as u16) << 8) | (oplo as u16);
+		
+		let d_bits = (opcode >> 3) & 7;
+		let s = opcode & 7;
+		let rp = (opcode >> 4) & 3;
+		let hlptr = self.read_rp(2);
+		
+		let s = match s {
+		    0b000 => self.b,
+		    0b001 => self.c,
+		    0b010 => self.d,
+		    0b011 => self.e,
+		    0b100 => self.h,
+		    0b101 => self.l,
+		    0b110 => self.bus.read_byte(hlptr),
+		    _ => self.a,
+		};
+		
+		let d = match d_bits {
+		    0b000 => self.b,
+		    0b001 => self.c,
+		    0b010 => self.d,
+		    0b011 => self.e,
+		    0b100 => self.h,
+		    0b101 => self.l,
+		    0b110 => self.bus.read_byte(hlptr),
+		    _ => self.a,
+		};
+
+		match opcode {
+		    0xe5 => { //PUSH IX
+			self.push_word(self.ix);
+		    },
+		    _ => {
+			todo!("unimplemented opcode DD {opcode:02X}");
+		    },
+		};
 	    },
 	};
 	    

@@ -8,9 +8,10 @@ pub trait Bus {
     fn read_word(&mut self, addr: u16) -> u16;
     fn write_byte(&mut self, addr: u16, data: u8);
     fn write_word(&mut self, addr: u16, data: u16);
-    fn read_io_byte(&mut self, port: u8) -> u8;
-    fn write_io_byte(&mut self, port: u8, data: u8);
+    fn read_io_byte(&mut self, port: u16) -> u8;
+    fn write_io_byte(&mut self, port: u16, data: u8);
     fn load_bin(&mut self, offs: usize, buf: &[u8]);
+    fn step(&mut self, cyc: usize);
 }
 
 pub struct ZXBus {
@@ -46,21 +47,21 @@ impl Bus for ZXBus {
     }
 
     fn write_word(&mut self, addr: u16, data: u16) {
-	self.write_byte(addr, (data >> 8) as u8);
-	self.write_byte(addr + 1, (data & 0x00ff) as u8);
+	self.write_byte(addr + 1, (data >> 8) as u8);
+	self.write_byte(addr, (data & 0x00ff) as u8);
     }
 
-    fn read_io_byte(&mut self, port: u8) -> u8 {
+    fn read_io_byte(&mut self, port: u16) -> u8 {
 	match port {
 	    _ =>
-		todo!("unhandled io port read {port:02x}"),
+		todo!("unhandled io port read {port:04x}"),
 	}
     }
 
-    fn write_io_byte(&mut self, port: u8, data: u8) {
+    fn write_io_byte(&mut self, port: u16, data: u8) {
 	match port {
 	    _ =>
-		todo!("unhandled io port write {port:02x}"),
+		todo!("unhandled io port write {port:04x}"),
 	};
     }
 
@@ -68,6 +69,10 @@ impl Bus for ZXBus {
 	for i in 0..buf.len() {
 	    self.rom[offs + i] = buf[i];
 	}
+    }
+
+    fn step(&mut self, cyc: usize) {
+
     }
 }
 
@@ -82,10 +87,71 @@ impl ZXBus {
 	}
     }
 
-    pub fn step(&mut self, cyc: usize) {
-    }
-
     pub fn vram(&self) -> &[u8] {
 	&self.ram[0x4000 - RAM_START as usize ..= 0x5aff - RAM_START as usize]
+    }
+}
+
+pub struct CpmBus {
+    ram: [u8; 0x10000],
+    pub irq: bool,
+    pub irq_vec: u8,
+}
+
+impl Bus for CpmBus {
+    fn read_byte(&mut self, addr: u16) -> u8 {
+	self.ram[addr as usize]
+    }
+
+    fn read_word(&mut self, addr: u16) -> u16 {
+	let result: u16 = self.read_byte(addr) as u16 | ((self.read_byte(addr + 1) as u16) << 8);
+	result
+    }
+
+    fn write_byte(&mut self, addr: u16, data: u8) {
+	self.ram[addr as usize] = data;
+    }
+
+    fn write_word(&mut self, addr: u16, data: u16) {
+	self.write_byte(addr + 1, (data >> 8) as u8);
+	self.write_byte(addr, (data & 0x00ff) as u8);
+    }
+
+    fn read_io_byte(&mut self, port: u16) -> u8 {
+	match port {
+	    _ =>
+		todo!("unhandled io port read {port:04x}"),
+	}
+    }
+
+    fn write_io_byte(&mut self, port: u16, data: u8) {
+	match port {
+	    0x00aa => {
+		print!("{}", data as char);
+	    },
+	    0x00ff => panic!("warm booted"),
+	    _ =>
+		todo!("unhandled io port write {port:04x}"),
+	};
+    }
+
+    fn load_bin(&mut self, offs: usize, buf: &[u8]) {
+	for i in 0..buf.len() {
+	    self.ram[offs + i] = buf[i];
+	}
+    }
+
+    fn step(&mut self, cyc: usize) {
+	
+    }
+}
+
+impl CpmBus {
+    pub fn new() -> Self {
+	CpmBus {
+	    ram: [0; 0x10000],
+	    irq: false,
+	    irq_vec: 0,
+	}
     }
 }
