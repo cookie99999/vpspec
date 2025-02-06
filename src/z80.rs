@@ -3,7 +3,7 @@ extern crate bitflags;
 use crate::bus;
 use crate::bus::Bus;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct Instruction {
     opcode: u8,
     //opcode2: u8,
@@ -505,12 +505,144 @@ impl Cpu {
 	};
     }
 
+    fn getops(&mut self) -> (u16, u8, u8, u16, Instruction, u8, u8, u8, u8, u8, u16) {
+	let mut pfx: u16 = 0;
+	let mut i: u16 = 0;
+	let mut opcode: u8 = 0;
+	'fetch: loop {
+	    opcode = self.bus.read_byte(self.pc.wrapping_add(i));
+	    match opcode {
+		0xcb => {
+		    pfx = if pfx == 0 || pfx == 0xdd || pfx == 0xfd {
+			(pfx << 8) | 0xcb
+		    } else {
+			break 'fetch;
+		    };
+		},
+		0xed => {
+		    pfx = if pfx == 0 || pfx == 0xdd || pfx == 0xfd {
+			0xed
+		    } else {
+			break 'fetch;
+		    };
+		},
+		0xdd => {
+		    pfx = if pfx != 0xcb && pfx != 0xed {
+			0xdd
+		    } else {
+			break 'fetch;
+		    };
+		},
+		0xfd => {
+		    pfx = if pfx != 0xcb && pfx != 0xed {
+			0xfd
+		    } else {
+			break 'fetch;
+		    };
+		},
+		_ => break 'fetch,
+	    };
+	    i += 1;
+	}
+		
+	let op1 = self.bus.read_byte(self.pc.wrapping_add(i + 1));
+	let op2 = self.bus.read_byte(self.pc.wrapping_add(i + 2));
+	let opw = ((op2 as u16) << 8) | op1 as u16;
+
+	let instr: Instruction = match pfx {
+	    0xcb => CB_SET[opcode as usize],
+	    0xdd => DD_SET[opcode as usize],
+	    0xed => ED_SET[opcode as usize],
+	    0xfd => FD_SET[opcode as usize],
+	    0xddcb => DDCB_SET[opcode as usize],
+	    0xfdcb => FDCB_SET[opcode as usize],
+	    _ => INSTR_SET[opcode as usize],
+	};
+
+	let d_bits = (opcode >> 3) & 7;
+	let s = opcode & 7;
+	let rp = (opcode >> 4) & 3;
+	let c = d_bits;
+	let n = d_bits;
+	let hlptr = match pfx {
+	    0xdd | 0xddcb => {
+		((self.ix as i16) + op1 as i16) as u16
+	    },
+	    0xfd | 0xfdcb => {
+		((self.iy as i16) + op1 as i16) as u16
+	    },
+	    _ => self.read_rp(2),
+	};
+
+	let s = match s {
+	    0b000 => self.b,
+	    0b001 => self.c,
+	    0b010 => self.d,
+	    0b011 => self.e,
+	    0b100 => {
+		match pfx {
+		    0xdd | 0xddcb => {
+			(self.ix >> 8) as u8
+		    },
+		    0xfd | 0xfdcb => {
+			(self.iy >> 8) as u8
+		    },
+		    _ => self.h,
+		}
+	    },
+	    0b101 => {
+		match pfx {
+		    0xdd | 0xddcb => {
+			(self.ix & 0x00ff) as u8
+		    },
+		    0xfd | 0xfdcb => {
+			(self.iy & 0x00ff) as u8
+		    },
+		    _ => self.l,
+		}
+	    },
+	    0b110 => self.bus.read_byte(hlptr),
+	    _ => self.a,
+	};
+
+	let d = match d_bits {
+	    0b000 => self.b,
+	    0b001 => self.c,
+	    0b010 => self.d,
+	    0b011 => self.e,
+	    0b100 => {
+		match pfx {
+		    0xdd | 0xddcb => {
+			(self.ix >> 8) as u8
+		    },
+		    0xfd | 0xfdcb => {
+			(self.iy >> 8) as u8
+		    },
+		    _ => self.h,
+		}
+	    },
+	    0b101 => {
+		match pfx {
+		    0xdd | 0xddcb => {
+			(self.ix & 0x00ff) as u8
+		    },
+		    0xfd | 0xfdcb => {
+			(self.iy & 0x00ff) as u8
+		    },
+		    _ => self.l,
+		}
+	    },
+	    0b110 => self.bus.read_byte(hlptr), //bad trouble, but only used in like 4 instructions so its ok for now
+	    _ => self.a,
+	};
+	
+	(pfx, opcode, op1, opw, instr, d_bits, d, s, rp, c, hlptr)
+    }
+    
     pub fn step(&mut self) -> usize {
 	let oldcycles = self.cycles;
-	let mut opcode: u8 = self.bus.read_byte(self.pc);
-	let op1 = self.bus.read_byte(self.pc.wrapping_add(1));
-	let op2 = self.bus.read_byte(self.pc.wrapping_add(2));
-	let opw = ((op2 as u16) << 8) | op1 as u16;
+
+	let (pfx, mut opcode, op1, opw, instr, d_bits, d, s, rp, c, hlptr) = self.getops();
 	
 	if self.bus.irq && self.iff {
 	    self.pc -= 1; //1 byte will be added later, want to ret back to interrupted instr
@@ -526,47 +658,12 @@ impl Cpu {
 	    //gotten the one instruction delay specified in the manual
 	}
 
-	let instr: &Instruction = match opcode {
-	    0xcb => &CB_SET[op1 as usize],
-	    0xdd => &DD_SET[op1 as usize],
-	    0xed => &ED_SET[op1 as usize],
-	    0xfd => &FD_SET[op1 as usize],
-	    _ => &INSTR_SET[opcode as usize],
-	};
 	self.cycles += instr.cycles as usize;
-	let d_bits = (opcode >> 3) & 7;
-	let s = opcode & 7;
-	let rp = (opcode >> 4) & 3;
-	let c = d_bits;
-	let n = d_bits;
-	let hlptr = self.read_rp(2);
-
-	let s = match s {
-	    0b000 => self.b,
-	    0b001 => self.c,
-	    0b010 => self.d,
-	    0b011 => self.e,
-	    0b100 => self.h,
-	    0b101 => self.l,
-	    0b110 => self.bus.read_byte(hlptr),
-	    _ => self.a,
-	};
-
-	let d = match d_bits {
-	    0b000 => self.b,
-	    0b001 => self.c,
-	    0b010 => self.d,
-	    0b011 => self.e,
-	    0b100 => self.h,
-	    0b101 => self.l,
-	    0b110 => self.bus.read_byte(hlptr), //bad trouble, but only used in like 4 instructions so its ok for now
-	    _ => self.a,
-	};
 
 	if self.dbg {
 	    println!("A {:02X} F {:02X} B {:02X} C {:02X} D {:02X} E {:02X} H {:02X} L {:02X} SP {:04X}, CYC: {} iff {}",
 		     self.a, self.f.as_u8(), self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.cycles, self.iff);
-	    disas(self.pc, instr.opcode, op1, opw);
+	    disas(self.pc, pfx, instr.opcode, op1, opw);
 	}
 	
 	self.pc = self.pc.wrapping_add(instr.bytes as u16);
