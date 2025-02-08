@@ -660,6 +660,7 @@ impl Cpu {
     
     pub fn step(&mut self) -> usize {
 	let oldcycles = self.cycles;
+	self.r = self.r.wrapping_add(1);
 
 	let (pfx, mut opcode, op1, opw, instr, d_bits, d, s, rp, c, hlptr) = self.getops();
 	
@@ -926,38 +927,44 @@ impl Cpu {
 		    }
 		},
 		0x42 | 0x52 | 0x62 | 0x72 => { //SBC HL, rp
-		    let hl = self.read_rp(pfx, 2) as u32;
-		    let s = self.read_rp(pfx, rp) as u32;
-		    let cflag = self.f.contains(PSW::C) as u32;
-		    let tmp = s.wrapping_sub(s).wrapping_sub(cflag);
-
-		    self.f.set(PSW::S, (tmp & 0x8000) != 0);
-		    self.f.set(PSW::Z, (tmp & 0xffff) == 0);
-		    self.f.set(PSW::F5, ((tmp >> 8) & (1 << 5)) != 0);
-		    self.f.set(PSW::H, ((hl ^ s ^ tmp) & 0x1000) != 0);
-		    self.f.set(PSW::F3, ((tmp >> 8) & (1 << 3)) != 0);
-		    self.f.set(PSW::P, ((((hl ^ s)) & (hl ^ tmp) >> 13) & 0x4) != 0);
-		    self.f.insert(PSW::N);
-		    self.f.set(PSW::C, tmp > 0xffff);
+		    let hl = self.read_rp(pfx, 2);
+		    let s = self.read_rp(pfx, rp);
+		    let cflag = self.f.contains(PSW::C) as u16;
 		    
+		    let lsb = (hl & 0xff).wrapping_add(!(s & 0xff)).wrapping_add(!cflag & 1);
+		    let cflag = (lsb > 0xff) as u16;
+
+		    let msb = (hl >> 8).wrapping_add(!(s >> 8) & 0xff).wrapping_add(!cflag & 1);
+		    self.f.set(PSW::C, msb <= 0xff);
+		    self.f.insert(PSW::N);
+		    self.f.set(PSW::H, ((msb ^ (hl >> 8) ^ ((!(s >> 8)) & 0xff)) & (1 << 4)) == 0);
+		    self.f.set(PSW::P, ((msb ^ (hl >> 8) ^ ((!(s >> 8)) & 0xff)) & (1 << 7)) !=
+			       ((msb ^ (hl >> 8) ^ ((!(s >> 8)) & 0xff)) & (1 << 8)));
+		    self.f.set(PSW::S, (msb & 0x80) != 0);
+		    
+		    let tmp = (msb << 8) | (lsb & 0xff);
+		    self.f.set(PSW::Z, tmp == 0);
 		    self.write_rp(pfx, 2, tmp as u16);
 		},
 		0x4a | 0x5a | 0x6a | 0x7a => { //ADC HL, rp
-		    let hl = self.read_rp(pfx, 2) as u32;
-		    let s = self.read_rp(pfx, rp) as u32;
-		    let cflag = self.f.contains(PSW::C) as u32;
-		    let tmp = s.wrapping_add(s).wrapping_add(cflag);
+		    let hl = self.read_rp(pfx, 2);
+		    let s = self.read_rp(pfx, rp);
+		    let cflag = self.f.contains(PSW::C) as u16;
 		    
-		    self.f.set(PSW::S, (tmp & 0x8000) != 0);
-		    self.f.set(PSW::Z, (tmp & 0xffff) == 0);
-		    self.f.set(PSW::F5, ((tmp >> 8) & (1 << 5)) != 0);
-		    self.f.set(PSW::H, ((hl ^ s ^ tmp) & 0x1000) != 0);
-		    self.f.set(PSW::F3, ((tmp >> 8) & (1 << 3)) != 0);
-		    self.f.set(PSW::P, ((((hl ^ !s)) & (hl ^ tmp) >> 13) & 0x4) != 0);
+		    let lsb = (hl & 0xff).wrapping_add(s & 0xff).wrapping_add(cflag);
+		    let cflag = (lsb > 0xff) as u16;
+
+		    let msb = (hl >> 8).wrapping_add(s >> 8).wrapping_add(cflag);
+		    self.f.set(PSW::C, msb > 0xff);
 		    self.f.remove(PSW::N);
-		    self.f.set(PSW::C, tmp > 0xffff);
+		    self.f.set(PSW::S, (msb & 0x80) != 0);
+		    self.f.set(PSW::H, ((msb ^ (hl >> 8) ^ (s >> 8)) & (1 << 4)) != 0);
+		    self.f.set(PSW::P, ((msb ^ (hl >> 8) ^ (s >> 8)) & (1 << 7)) !=
+			       ((msb ^ (hl >> 8) ^ (s >> 8)) & (1 << 8)));
 		    
-		    self.write_rp(pfx, 2, tmp as u16);
+		    let tmp = (msb << 8) | (lsb & 0xff);
+		    self.f.set(PSW::Z, tmp == 0);
+		    self.write_rp(pfx, 2, tmp);
 		},
 		0x43 | 0x53 | 0x63 | 0x73 => { //LD (nn), rp
 		    let tmp = self.read_rp(pfx, rp);
