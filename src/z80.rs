@@ -926,32 +926,34 @@ impl Cpu {
 		    }
 		},
 		0x42 | 0x52 | 0x62 | 0x72 => { //SBC HL, rp
-		    let s = self.read_rp(pfx, 2) as u32;
+		    let hl = self.read_rp(pfx, 2) as u32;
+		    let s = self.read_rp(pfx, rp) as u32;
 		    let cflag = self.f.contains(PSW::C) as u32;
-		    let tmp = s.wrapping_sub(self.read_rp(pfx, rp) as u32).wrapping_sub(cflag);
+		    let tmp = s.wrapping_sub(s).wrapping_sub(cflag);
 
 		    self.f.set(PSW::S, (tmp & 0x8000) != 0);
-		    self.f.set(PSW::Z, tmp == 0);
+		    self.f.set(PSW::Z, (tmp & 0xffff) == 0);
 		    self.f.set(PSW::F5, ((tmp >> 8) & (1 << 5)) != 0);
-		    self.f.set(PSW::H, ((s ^ tmp) & 0x1000) != 0);
+		    self.f.set(PSW::H, ((hl ^ s ^ tmp) & 0x1000) != 0);
 		    self.f.set(PSW::F3, ((tmp >> 8) & (1 << 3)) != 0);
-		    self.f.set(PSW::P, tmp > 0xffff);
+		    self.f.set(PSW::P, ((((hl ^ s)) & (hl ^ tmp) >> 13) & 0x4) != 0);
 		    self.f.insert(PSW::N);
 		    self.f.set(PSW::C, tmp > 0xffff);
 		    
 		    self.write_rp(pfx, 2, tmp as u16);
 		},
 		0x4a | 0x5a | 0x6a | 0x7a => { //ADC HL, rp
-		    let s = self.read_rp(pfx, 2) as u32;
+		    let hl = self.read_rp(pfx, 2) as u32;
+		    let s = self.read_rp(pfx, rp) as u32;
 		    let cflag = self.f.contains(PSW::C) as u32;
-		    let tmp = s.wrapping_add(self.read_rp(pfx, rp) as u32).wrapping_add(cflag);
+		    let tmp = s.wrapping_add(s).wrapping_add(cflag);
 		    
 		    self.f.set(PSW::S, (tmp & 0x8000) != 0);
-		    self.f.set(PSW::Z, tmp == 0);
+		    self.f.set(PSW::Z, (tmp & 0xffff) == 0);
 		    self.f.set(PSW::F5, ((tmp >> 8) & (1 << 5)) != 0);
-		    self.f.set(PSW::H, ((s ^ tmp) & 0x1000) != 0);
+		    self.f.set(PSW::H, ((hl ^ s ^ tmp) & 0x1000) != 0);
 		    self.f.set(PSW::F3, ((tmp >> 8) & (1 << 3)) != 0);
-		    self.f.set(PSW::P, tmp > 0xffff);
+		    self.f.set(PSW::P, ((((hl ^ !s)) & (hl ^ tmp) >> 13) & 0x4) != 0);
 		    self.f.remove(PSW::N);
 		    self.f.set(PSW::C, tmp > 0xffff);
 		    
