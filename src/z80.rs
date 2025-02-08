@@ -344,7 +344,14 @@ impl Cpu {
 	self.i = 0;
     }
 
-    fn read_rp(&self, rp: u8) -> u16 {
+    fn read_rp(&self, pfx: u16, rp: u8) -> u16 {
+	if pfx == 0xdd || pfx == 0xddcb {
+	    return self.ix;
+	}
+	if pfx == 0xfd || pfx == 0xfdcb {
+	    return self.iy;
+	}
+	
 	let rpl = match rp {
 	    0 => self.c,
 	    1 => self.e,
@@ -360,7 +367,7 @@ impl Cpu {
 	((rph as u16) << 8) | rpl as u16
     }
 
-    fn write_rp(&mut self, rp: u8, data: u16) {
+    fn write_rp(&mut self, pfx: u16, rp: u8, data: u16) {
 	let hi = ((data >> 8) & 0xff) as u8;
 	let lo = (data & 0xff) as u8;
 
@@ -373,9 +380,13 @@ impl Cpu {
 		self.d = hi;
 		self.e = lo;
 	    },
-	    2 => {
-		self.h = hi;
-		self.l = lo;
+	    2 => match pfx {
+		0xdd | 0xddcb => self.ix = data,
+		0xfd | 0xfdcb => self.iy = data,
+		_ => {
+		    self.h = hi;
+		    self.l = lo;
+		},
 	    },
 	    _ => {
 		self.sp = data;
@@ -394,14 +405,22 @@ impl Cpu {
 	tmp
     }
 
-    fn movb(&mut self, d: u8, s: u8, hlptr: u16) {
+    fn movb(&mut self, pfx: u16, d: u8, s: u8, hlptr: u16) {
 	match d {
 	    0 => self.b = s,
 	    1 => self.c = s,
 	    2 => self.d = s,
 	    3 => self.e = s,
-	    4 => self.h = s,
-	    5 => self.l = s,
+	    4 => match pfx {
+		0xdd | 0xddcb => self.ix = (self.ix & 0x00ff) | (s as u16) << 8,
+		0xfd | 0xfdcb => self.iy = (self.iy & 0x00ff) | (s as u16) << 8,
+		_ => self.h = s,
+	    },
+	    5 => match pfx {
+		0xdd | 0xddcb => self.ix = (self.ix & 0xff00) | s as u16,
+		0xfd | 0xfdcb => self.iy = (self.iy & 0xff00) | s as u16,
+		_ => self.l = s,
+	    },
 	    6 => self.bus.write_byte(hlptr, s),
 	    _ => self.a = s,
 	};
@@ -571,7 +590,7 @@ impl Cpu {
 	    0xfd | 0xfdcb => {
 		((self.iy as i16) + op1 as i16) as u16
 	    },
-	    _ => self.read_rp(2),
+	    _ => self.read_rp(pfx, 2),
 	};
 
 	let s = match s {
@@ -668,545 +687,425 @@ impl Cpu {
 	
 	self.pc = self.pc.wrapping_add(instr.bytes as u16);
 
-	match opcode {
-	    0x00 => { //NOP
-		//nothing
-	    },
-	    0x76 => { //HLT
-		return 0; //todo proper behavior
-	    },
-	    0x40..=0x7f => { //LD r1, r2
-		self.movb(d_bits, s, hlptr);
-	    },
-	    0x06 | 0x16 | 0x26 | 0x36 |
-	    0x0e | 0x1e | 0x2e | 0x3e => { //LD r, n
-		self.movb(d_bits, op1, hlptr);
-	    },
-	    0x01 | 0x11 | 0x21 | 0x31 => { //LD rp, nn
-		self.write_rp(rp, opw);
-	    },
-	    0x02 | 0x12 => { //LD (rp), A
-		let tmp = self.read_rp(rp);
-		self.bus.write_byte(tmp, self.a);
-	    },
-	    0x0a | 0x1a => { //LD A, (rp)
-		let tmp = self.read_rp(rp);
-		self.a = self.bus.read_byte(tmp);
-	    },
-	    0x22 => { //LD (nn), HL
-		let tmp = self.read_rp(2);
-		self.bus.write_word(opw, tmp);
-	    },
-	    0x2a => { //LD HL, (nn)
-		let tmp = self.bus.read_word(opw);
-		self.write_rp(2, tmp);
-	    },
-	    0x32 => { //LD (nn), A
-		self.bus.write_byte(opw, self.a);
-	    },
-	    0x3a => { //LD A, (nn)
-		self.a = self.bus.read_byte(opw);
-	    },
-	    0xc5 | 0xd5 | 0xe5 | 0xf5 => { //PUSH
-		let mut tmp = self.read_rp(rp);
-		if rp == 3 {
-		    tmp = ((self.a as u16) << 8) | (self.f.as_u8() as u16);
-		}
-		self.push_word(tmp);
-	    },
-	    0xc1 | 0xd1 | 0xe1 | 0xf1 => { //POP
-		let tmp = self.pop_word();
-		if rp != 3 {
-		    self.write_rp(rp, tmp);
-		} else {
-		    self.a = ((tmp & 0xff00) >> 8) as u8;
-		    self.f = PSW::from_bits((tmp & 0x00ff) as u8).unwrap();
-		    //todo undocumented bits
-		}
-	    },
-	    0xe3 => { //EX (SP), HL
-		let tmp = self.pop_word();
-		let hl = self.read_rp(2);
-		self.push_word(hl);
-		self.write_rp(2, tmp);
-	    },
-	    0xf9 => { //LD SP, HL
-		self.sp = self.read_rp(2);
-	    },
-	    0xeb => { //EX DE, HL
-		let tmp = self.h;
-		self.h = self.d;
-		self.d = tmp;
-		let tmp = self.l;
-		self.l = self.e;
-		self.e = tmp;
-	    },
-	    0x03 | 0x13 | 0x23 | 0x33 => { //INC rp
-		let tmp = self.read_rp(rp);
-		self.write_rp(rp, tmp.wrapping_add(1));
-	    },
-	    0x0b | 0x1b | 0x2b | 0x3b => { //DEC rp
-		let tmp = self.read_rp(rp);
-		self.write_rp(rp, tmp.wrapping_sub(1));
-	    },
-	    0x09 | 0x19 | 0x29 | 0x39 => { //ADD HL, rp
-		let hltmp = self.read_rp(2) as u32;
-		let rptmp = self.read_rp(rp) as u32;
-		let tmp = hltmp + rptmp;
-		self.f.set(PSW::C, tmp > 0xffff);
-		self.write_rp(2, tmp as u16);
-	    },
-	    0x80..=0xbf => { //aluops A, r
-		let op_bits: u8 = (opcode & 0x38) >> 3;
-		self.aluop(op_bits, s);
-	    },
-	    0xc6 | 0xd6 | 0xe6 | 0xf6 |
-	    0xce | 0xde | 0xee | 0xfe => { //aluops A, n
-		let op_bits: u8 = (opcode & 0x38) >> 3;
-		self.aluop(op_bits, op1);
-	    },
-	    0x04 | 0x14 | 0x24 | 0x34 |
-	    0x0c | 0x1c | 0x2c | 0x3c => { //INC r
-		let mut tmp = d.wrapping_add(1) as u16;
-		if d_bits == 6 {
-		    tmp = self.bus.read_byte(hlptr).wrapping_add(1) as u16;
-		}
-		self.f.set(PSW::Z, tmp == 0);
-		self.f.set(PSW::S, (tmp & 0x80) != 0);
-		self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
-		self.f.set(PSW::H, ((d & 0x0f).wrapping_add(1)) > 0x0f);
-		let tmp = tmp as u8;
-		match d_bits {
-		    0 => self.b = tmp,
-		    1 => self.c = tmp,
-		    2 => self.d = tmp,
-		    3 => self.e = tmp,
-		    4 => self.h = tmp,
-		    5 => self.l = tmp,
-		    6 => self.bus.write_byte(hlptr, tmp),
-		    _ => self.a = tmp,
-		};
-	    },
-	    0x05 | 0x15 | 0x25 | 0x35 |
-	    0x0d | 0x1d | 0x2d | 0x3d => { //DEC r
-		let mut tmp = d.wrapping_sub(1) as u16;
-		if d_bits == 6 {
-		    tmp = self.bus.read_byte(hlptr).wrapping_sub(1) as u16;
-		}
-		self.f.set(PSW::Z, tmp == 0);
-		self.f.set(PSW::S, (tmp & 0x80) != 0);
-		self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
-		self.f.set(PSW::H, (d & 0x0f) != 0);
-		let tmp = tmp as u8;
-		match d_bits {
-		    0 => self.b = tmp,
-		    1 => self.c = tmp,
-		    2 => self.d = tmp,
-		    3 => self.e = tmp,
-		    4 => self.h = tmp,
-		    5 => self.l = tmp,
-		    6 => self.bus.write_byte(hlptr, tmp),
-		    _ => self.a = tmp,
-		};
-	    },
-	    0x07 => { //RLCA
-		self.f.set(PSW::C, ((self.a & 0x80) >> 7) != 0);
-		self.a = self.a << 1;
-		self.a = self.a | (self.f.contains(PSW::C) as u8);
-	    },
-	    0x17 => { //RLA
-		let tmp = self.f.contains(PSW::C) as u8;
-		self.f.set(PSW::C, ((self.a & 0x80) >> 7) != 0);
-		self.a = self.a << 1;
-		self.a = self.a | tmp;
-	    },
-	    0x27 => { //DAA
-		let mut tmp = self.a as u16;
-		if ((tmp & 0x0f) > 0x09) || self.f.contains(PSW::H) {
-		    self.f.set(PSW::H, (((tmp & 0x0f) + 0x06) & 0xf0) != 0);
-		    tmp += 6;
-		    if (tmp & 0xff00) != 0 {
-			self.f.insert(PSW::C);
+	match pfx {
+	    0x00 | 0xdd | 0xfd => match opcode {
+		0x00 => { //NOP
+		    //nothing
+		},
+		0x76 => { //HLT
+		    return 0; //todo proper behavior
+		},
+		0x40..=0x7f => { //LD r1, r2
+		    self.movb(pfx, d_bits, s, hlptr);
+		},
+		0x06 | 0x16 | 0x26 | 0x36 |
+		0x0e | 0x1e | 0x2e | 0x3e => { //LD r, n
+		    self.movb(pfx, d_bits, op1, hlptr);
+		},
+		0x01 | 0x11 | 0x21 | 0x31 => { //LD rp, nn
+		    self.write_rp(pfx, rp, opw);
+		},
+		0x02 | 0x12 => { //LD (rp), A
+		    let tmp = self.read_rp(pfx, rp);
+		    self.bus.write_byte(tmp, self.a);
+		},
+		0x0a | 0x1a => { //LD A, (rp)
+		    let tmp = self.read_rp(pfx, rp);
+		    self.a = self.bus.read_byte(tmp);
+		},
+		0x22 => { //LD (nn), HL
+		    let tmp = self.read_rp(pfx, 2);
+		    self.bus.write_word(opw, tmp);
+		},
+		0x2a => { //LD HL, (nn)
+		    let tmp = self.bus.read_word(opw);
+		    self.write_rp(pfx, 2, tmp);
+		},
+		0x32 => { //LD (nn), A
+		    self.bus.write_byte(opw, self.a);
+		},
+		0x3a => { //LD A, (nn)
+		    self.a = self.bus.read_byte(opw);
+		},
+		0xc5 | 0xd5 | 0xe5 | 0xf5 => { //PUSH
+		    let mut tmp = self.read_rp(pfx, rp);
+		    if rp == 3 {
+			tmp = ((self.a as u16) << 8) | (self.f.as_u8() as u16);
 		    }
-		}
-		if ((tmp & 0xf0) > 0x90) || self.f.contains(PSW::C) {
-		    tmp += 0x60;
-		    if (tmp & 0xff00) != 0 {
-			self.f.insert(PSW::C);
+		    self.push_word(tmp);
+		},
+		0xc1 | 0xd1 | 0xe1 | 0xf1 => { //POP
+		    let tmp = self.pop_word();
+		    if rp != 3 {
+			self.write_rp(pfx, rp, tmp);
+		    } else {
+			self.a = ((tmp & 0xff00) >> 8) as u8;
+			self.f = PSW::from_bits((tmp & 0x00ff) as u8).unwrap();
+			//todo undocumented bits
 		    }
-		}
-		self.f.set(PSW::Z, (tmp & 0xff) == 0);
-		self.f.set(PSW::S, (tmp & 0x80) != 0);
-		self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
-		self.a = tmp as u8;
-	    },
-	    0x37 => { //SCF
-		self.f.insert(PSW::C);
-	    },
-	    0x0f => { //RRCA
-		self.f.set(PSW::C, (self.a & 1) != 0);
-		self.a = ((self.a & 1) << 7) | (self.a >> 1);
-	    },
-	    0x1f => { //RRA
-		let tmp = (self.f.contains(PSW::C) as u8) << 7;
-		self.f.set(PSW::C, (self.a & 1) != 0);
-		self.a = self.a >> 1;
-		self.a = self.a | tmp;
-	    },
-	    0x2f => { //CPL
-		self.a = !self.a;
-	    },
-	    0x3f => { //CCF
-		self.f.toggle(PSW::C);
-	    },
-	    0xe9 => { //JP (HL)
-		self.pc = hlptr;
-	    },
-	    0xcb => { //prefix CB
-		todo!("prefix cb");
-	    },
-	    0xc0 | 0xc2..=0xc4 | 0xc7..=0xcd | 0xcf |
-	    0xd0 | 0xd2 | 0xd4 | 0xd7 | 0xd8 | 0xda | 0xdc | 0xdf |
-	    0xe0 | 0xe2 | 0xe4 | 0xe7..=0xea | 0xec | 0xef |
-	    0xf0 | 0xf2 | 0xf4 | 0xf7 | 0xf8 | 0xfa | 0xfc | 0xff => { //branches
-		self.branch((opcode & 6) >> 1, c, opcode & 1, opw);
-	    },
-	    0xd3 => { //OUT (n), A
-		self.bus.write_io_byte(op1 as u16, self.a);
-	    },
-	    0xdb => { //IN A, (n)
-		self.a = self.bus.read_io_byte(op1 as u16);
-	    },
-	    0xf3 => { //DI
-		self.iff = false;
-	    },
-	    0xfb => { //EI
-		self.ei_pend = true;
-	    },
-	    0x08 => { //EX AF, AF'
-		let tmp = self.shadow;
-		self.shadow[6] = self.a;
-		self.shadow[7] = self.f.as_u8();
-		self.a = tmp[0];
-		self.f = PSW::from_bits(tmp[1]).unwrap();
-	    },
-	    0x10 | 0x20 | 0x30 |
-	    0x18 | 0x28 | 0x38 => { //DJNZ + JR
-		todo!();
-	    },
-	    0xd9 => { //EXX
-		todo!();
-	    },
-	    0xed => { //misc prefix
-		let tmp = self.pc.wrapping_sub(instr.bytes as u16);
-		opcode = self.bus.read_byte(tmp.wrapping_add(1));
-		let oplo = self.bus.read_byte(tmp.wrapping_add(2));
-		let ophi = self.bus.read_byte(tmp.wrapping_add(3));
-		let opw = ((ophi as u16) << 8) | (oplo as u16);
-
-		let d_bits = (opcode >> 3) & 7;
-		let s = opcode & 7;
-		let rp = (opcode >> 4) & 3;
-		let hlptr = self.read_rp(2);
-		
-		let s = match s {
-		    0b000 => self.b,
-		    0b001 => self.c,
-		    0b010 => self.d,
-		    0b011 => self.e,
-		    0b100 => self.h,
-		    0b101 => self.l,
-		    0b110 => self.bus.read_byte(hlptr),
-		    _ => self.a,
-		};
-		
-		let d = match d_bits {
-		    0b000 => self.b,
-		    0b001 => self.c,
-		    0b010 => self.d,
-		    0b011 => self.e,
-		    0b100 => self.h,
-		    0b101 => self.l,
-		    0b110 => self.bus.read_byte(hlptr),
-		    _ => self.a,
-		};
-
-		match opcode {
-		    0x40 | 0x50 | 0x60 |
-		    0x48 | 0x58 | 0x68 | 0x78 => { //16 bit IN
-			let bctmp = self.read_rp(0);
-			let tmp = self.bus.read_io_byte(bctmp);
-
-			match d_bits {
-			    0 => self.b = tmp,
-			    1 => self.c = tmp,
-			    2 => self.d = tmp,
-			    3 => self.e = tmp,
-			    4 => self.h = tmp,
-			    5 => self.l = tmp,
-			    6 => {},
-			    _ => self.a = tmp,
-			};
-		    },
-		    0x41 | 0x51 | 0x61 |
-		    0x49 | 0x59 | 0x69 | 0x79 => { //16 bit OUT
-			let bctmp = self.read_rp(0);
-
-			if d_bits != 6 {
-			    self.bus.write_io_byte(bctmp, d);
-			} else {
-			    self.bus.write_io_byte(bctmp, 0);
+		},
+		0xe3 => { //EX (SP), HL
+		    let tmp = self.pop_word();
+		    let hl = self.read_rp(pfx, 2);
+		    self.push_word(hl);
+		    self.write_rp(pfx, 2, tmp);
+		},
+		0xf9 => { //LD SP, HL
+		    self.sp = self.read_rp(pfx, 2);
+		},
+		0xeb => { //EX DE, HL
+		    let tmp = self.h;
+		    self.h = self.d;
+		    self.d = tmp;
+		    let tmp = self.l;
+		    self.l = self.e;
+		    self.e = tmp;
+		},
+		0x03 | 0x13 | 0x23 | 0x33 => { //INC rp
+		    let tmp = self.read_rp(pfx, rp);
+		    self.write_rp(pfx, rp, tmp.wrapping_add(1));
+		},
+		0x0b | 0x1b | 0x2b | 0x3b => { //DEC rp
+		    let tmp = self.read_rp(pfx, rp);
+		    self.write_rp(pfx, rp, tmp.wrapping_sub(1));
+		},
+		0x09 | 0x19 | 0x29 | 0x39 => { //ADD HL, rp
+		    let hltmp = self.read_rp(pfx, 2) as u32;
+		    let rptmp = self.read_rp(pfx, rp) as u32;
+		    let tmp = hltmp + rptmp;
+		    self.f.set(PSW::C, tmp > 0xffff);
+		    self.write_rp(pfx, 2, tmp as u16);
+		},
+		0x80..=0xbf => { //aluops A, r
+		    let op_bits: u8 = (opcode & 0x38) >> 3;
+		    self.aluop(op_bits, s);
+		},
+		0xc6 | 0xd6 | 0xe6 | 0xf6 |
+		0xce | 0xde | 0xee | 0xfe => { //aluops A, n
+		    let op_bits: u8 = (opcode & 0x38) >> 3;
+		    self.aluop(op_bits, op1);
+		},
+		0x04 | 0x14 | 0x24 | 0x34 |
+		0x0c | 0x1c | 0x2c | 0x3c => { //INC r
+		    let mut tmp = d.wrapping_add(1) as u16;
+		    if d_bits == 6 {
+			tmp = self.bus.read_byte(hlptr).wrapping_add(1) as u16;
+		    }
+		    self.f.set(PSW::Z, tmp == 0);
+		    self.f.set(PSW::S, (tmp & 0x80) != 0);
+		    self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::H, ((d & 0x0f).wrapping_add(1)) > 0x0f);
+		    let tmp = tmp as u8;
+		    self.movb(pfx, d_bits, tmp, hlptr);
+		},
+		0x05 | 0x15 | 0x25 | 0x35 |
+		0x0d | 0x1d | 0x2d | 0x3d => { //DEC r
+		    let mut tmp = d.wrapping_sub(1) as u16;
+		    if d_bits == 6 {
+			tmp = self.bus.read_byte(hlptr).wrapping_sub(1) as u16;
+		    }
+		    self.f.set(PSW::Z, tmp == 0);
+		    self.f.set(PSW::S, (tmp & 0x80) != 0);
+		    self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::H, (d & 0x0f) != 0);
+		    let tmp = tmp as u8;
+		    self.movb(pfx, d_bits, tmp, hlptr);
+		},
+		0x07 => { //RLCA
+		    self.f.set(PSW::C, ((self.a & 0x80) >> 7) != 0);
+		    self.a = self.a << 1;
+		    self.a = self.a | (self.f.contains(PSW::C) as u8);
+		},
+		0x17 => { //RLA
+		    let tmp = self.f.contains(PSW::C) as u8;
+		    self.f.set(PSW::C, ((self.a & 0x80) >> 7) != 0);
+		    self.a = self.a << 1;
+		    self.a = self.a | tmp;
+		},
+		0x27 => { //DAA
+		    let mut tmp = self.a as u16;
+		    if ((tmp & 0x0f) > 0x09) || self.f.contains(PSW::H) {
+			self.f.set(PSW::H, (((tmp & 0x0f) + 0x06) & 0xf0) != 0);
+			tmp += 6;
+			if (tmp & 0xff00) != 0 {
+			    self.f.insert(PSW::C);
 			}
-		    },
-		    0x42 | 0x52 | 0x62 | 0x72 => { //SBC HL, rp
-			let tmp = self.read_rp(2) as u32;
-			let cflag = self.f.contains(PSW::C) as u32;
-			let tmp = tmp.wrapping_sub(self.read_rp(rp) as u32).wrapping_sub(cflag);
-			//todo: flags
-			self.write_rp(2, tmp as u16);
-		    },
-		    0x4a | 0x5a | 0x6a | 0x7a => { //ADC HL, rp
-			let tmp = self.read_rp(2) as u32;
-			let cflag = self.f.contains(PSW::C) as u32;
-			let tmp = tmp.wrapping_add(self.read_rp(rp) as u32).wrapping_add(cflag);
-			//todo: flags
-			self.write_rp(2, tmp as u16);
-		    },
-		    0x43 | 0x53 | 0x63 | 0x73 => { //LD (nn), rp
-			let tmp = self.read_rp(rp);
-			self.bus.write_word(opw, tmp);
-		    },
-		    0x4b | 0x5b | 0x6b | 0x7b => { //LD rp, (nn)
-			let tmp = self.bus.read_word(opw);
-			self.write_rp(rp, tmp);
-		    },
-		    0x46 | 0x56 | 0x5e => { //IM y
-			self.im = d;
-		    },
-		    0x44 => { //NEG
-			self.a = self.a ^ 0x80;
-		    },
-		    0x47 => { //LD I, A
-			self.i = self.a;
-		    },
-		    0x57 => { //LD A, I
-			self.a = self.i;
-		    },
-		    0x4f => { //LD R, A
-			self.r = self.a;
-		    },
-		    0x5f => { //LD A, R
-			self.a = self.r;
-		    },
-		    0x45 => { //RETN
-			self.iff = self.iff2;
-			self.pc = self.pop_word();
-		    },
-		    0x4d => { //RETI
-			self.pc = self.pop_word();
-			//todo interrupt acknowledge stuff
-		    },
-		    0x6f => { //RLD
-			let tmp = self.bus.read_byte(hlptr);
-			let tmp2 = (tmp & 0xf0) >> 4;
-			let tmp = ((tmp & 0xf0) >> 4) | ((tmp & 0x0f) << 4);
-			let tmp3 = self.a & 0x0f;
-			self.a = (self.a & 0xf0) | tmp2;
-			let tmp = (tmp & 0xf0) | tmp3;
-			self.bus.write_byte(hlptr, tmp);
-		    },
-		    0x67 => { //RRD
-			let tmp = self.bus.read_byte(hlptr);
-			let tmplo = tmp & 0x0f;
-			let alo = (self.a & 0x0f) << 4;
-			let tmphi = (tmp & 0xf0) >> 4;
-			let tmp = (tmp & 0xf0) | tmphi;
-			let tmp = (tmp & 0x0f) | alo;
-			self.a = (self.a & 0xf0) | tmplo;
-		    },
-		    0xa0 => { //LDI
-			let hl = self.read_rp(2);
-			let de = self.read_rp(1);
-			let bc = self.read_rp(0);
-			let tmp = self.bus.read_byte(hl);
-			self.bus.write_byte(de, tmp);
-			self.write_rp(1, de.wrapping_add(1));
-			self.write_rp(2, hl.wrapping_add(1));
-			self.write_rp(0, bc.wrapping_sub(1));
-
-			self.f.remove(PSW::H);
-			self.f.remove(PSW::N);
-			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-		    },
-		    0xb0 => { //LDIR
-			let hl = self.read_rp(2);
-			let de = self.read_rp(1);
-			let bc = self.read_rp(0);
-			let tmp = self.bus.read_byte(hl);
-			self.bus.write_byte(de, tmp);
-			self.write_rp(1, de.wrapping_add(1));
-			self.write_rp(2, hl.wrapping_add(1));
-			self.write_rp(0, bc.wrapping_sub(1));
-			
-			self.f.remove(PSW::H);
-			self.f.remove(PSW::N);
-			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-			
-			if bc.wrapping_sub(1) != 0 {
-			    self.pc -= 2;
+		    }
+		    if ((tmp & 0xf0) > 0x90) || self.f.contains(PSW::C) {
+			tmp += 0x60;
+			if (tmp & 0xff00) != 0 {
+			    self.f.insert(PSW::C);
 			}
-		    },
-		    0xa8 => { //LDD
-			let hl = self.read_rp(2);
-			let de = self.read_rp(1);
-			let bc = self.read_rp(0);
-			let tmp = self.bus.read_byte(hl);
-			self.bus.write_byte(de, tmp);
-			self.write_rp(1, de.wrapping_sub(1));
-			self.write_rp(2, hl.wrapping_sub(1));
-			self.write_rp(0, bc.wrapping_sub(1));
-
-			self.f.remove(PSW::H);
-			self.f.remove(PSW::N);
-			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-		    },
-		    0xb8 => { //LDDR
-			let hl = self.read_rp(2);
-			let de = self.read_rp(1);
-			let bc = self.read_rp(0);
-			let tmp = self.bus.read_byte(hl);
-			self.bus.write_byte(de, tmp);
-			self.write_rp(1, de.wrapping_sub(1));
-			self.write_rp(2, hl.wrapping_sub(1));
-			self.write_rp(0, bc.wrapping_sub(1));
-
-			self.f.remove(PSW::H);
-			self.f.remove(PSW::N);
-			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-
-			if bc.wrapping_sub(1) != 0 {
-			    self.pc -= 2;
-			}
-		    },
-		    0xa1 => { //CPI
-			let tmp = self.bus.read_byte(hlptr);
-			let tmp = self.a.wrapping_sub(tmp);
-			let bc = self.read_rp(0);
-			self.write_rp(0, bc.wrapping_sub(1));
-
-			self.f.set(PSW::S, (tmp & 0x80) != 0);
-			self.f.set(PSW::Z, tmp == 0);
-			//todo H
-			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-			self.f.insert(PSW::N);
-		    },
-		    0xb1 => { //CPIR
-			let tmp = self.bus.read_byte(hlptr);
-			let tmp = self.a.wrapping_sub(tmp);
-			let bc = self.read_rp(0);
-			self.write_rp(0, bc.wrapping_sub(1));
-
-			self.f.set(PSW::S, (tmp & 0x80) != 0);
-			self.f.set(PSW::Z, tmp == 0);
-			//todo H
-			self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-			self.f.insert(PSW::N);
-
-			if bc.wrapping_sub(1) != 0 {
-			    self.pc -= 2;
-			}
-		    },
-		    _ => {
-			todo!("unimplemented instruction ED {opcode:02X}");
-		    },
-		};
+		    }
+		    self.f.set(PSW::Z, (tmp & 0xff) == 0);
+		    self.f.set(PSW::S, (tmp & 0x80) != 0);
+		    self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
+		    self.a = tmp as u8;
+		},
+		0x37 => { //SCF
+		    self.f.insert(PSW::C);
+		},
+		0x0f => { //RRCA
+		    self.f.set(PSW::C, (self.a & 1) != 0);
+		    self.a = ((self.a & 1) << 7) | (self.a >> 1);
+		},
+		0x1f => { //RRA
+		    let tmp = (self.f.contains(PSW::C) as u8) << 7;
+		    self.f.set(PSW::C, (self.a & 1) != 0);
+		    self.a = self.a >> 1;
+		    self.a = self.a | tmp;
+		},
+		0x2f => { //CPL
+		    self.a = !self.a;
+		},
+		0x3f => { //CCF
+		    self.f.toggle(PSW::C);
+		},
+		0xe9 => { //JP (HL)
+		    self.pc = hlptr;
+		},
+		0xc0 | 0xc2..=0xc4 | 0xc7..=0xcd | 0xcf |
+		0xd0 | 0xd2 | 0xd4 | 0xd7 | 0xd8 | 0xda | 0xdc | 0xdf |
+		0xe0 | 0xe2 | 0xe4 | 0xe7..=0xea | 0xec | 0xef |
+		0xf0 | 0xf2 | 0xf4 | 0xf7 | 0xf8 | 0xfa | 0xfc | 0xff => { //branches
+		    self.branch((opcode & 6) >> 1, c, opcode & 1, opw);
+		},
+		0xd3 => { //OUT (n), A
+		    self.bus.write_io_byte(op1 as u16, self.a);
+		},
+		0xdb => { //IN A, (n)
+		    self.a = self.bus.read_io_byte(op1 as u16);
+		},
+		0xf3 => { //DI
+		    self.iff = false;
+		},
+		0xfb => { //EI
+		    self.ei_pend = true;
+		},
+		0x08 => { //EX AF, AF'
+		    let tmp = self.shadow;
+		    self.shadow[6] = self.a;
+		    self.shadow[7] = self.f.as_u8();
+		    self.a = tmp[0];
+		    self.f = PSW::from_bits(tmp[1]).unwrap();
+		},
+		0x10 | 0x20 | 0x30 |
+		0x18 | 0x28 | 0x38 => { //DJNZ + JR
+		    todo!("djnz and jr");
+		},
+		0xd9 => { //EXX
+		    todo!("exx");
+		},
+		_ => panic!("Prefix byte somehow got to decode"),
 	    },
-	    0xfd => { //iy prefix
-		let tmp = self.pc.wrapping_sub(instr.bytes as u16);
-		opcode = self.bus.read_byte(tmp.wrapping_add(1));
-		let oplo = self.bus.read_byte(tmp.wrapping_add(2));
-		let ophi = self.bus.read_byte(tmp.wrapping_add(3));
-		let opw = ((ophi as u16) << 8) | (oplo as u16);
-		
-		let d_bits = (opcode >> 3) & 7;
-		let s = opcode & 7;
-		let rp = (opcode >> 4) & 3;
-		let hlptr = self.read_rp(2);
-		
-		let s = match s {
-		    0b000 => self.b,
-		    0b001 => self.c,
-		    0b010 => self.d,
-		    0b011 => self.e,
-		    0b100 => self.h,
-		    0b101 => self.l,
-		    0b110 => self.bus.read_byte(hlptr),
-		    _ => self.a,
-		};
-		
-		let d = match d_bits {
-		    0b000 => self.b,
-		    0b001 => self.c,
-		    0b010 => self.d,
-		    0b011 => self.e,
-		    0b100 => self.h,
-		    0b101 => self.l,
-		    0b110 => self.bus.read_byte(hlptr),
-		    _ => self.a,
-		};
+	    0xed => match opcode { //misc prefix
+		0x40 | 0x50 | 0x60 |
+		0x48 | 0x58 | 0x68 | 0x78 => { //16 bit IN
+		    let bctmp = self.read_rp(pfx, 0);
+		    let tmp = self.bus.read_io_byte(bctmp);
 
-		match opcode {
-		    0xe1 => { //POP IY
-			self.iy = self.pop_word();
-		    },
-		    _ => {
-			todo!("unimplemented opcode FD {opcode:02X}");
-		    },
-		};
-	    },
-	    0xdd => { //ix prefix
-		let tmp = self.pc.wrapping_sub(instr.bytes as u16);
-		opcode = self.bus.read_byte(tmp.wrapping_add(1));
-		let oplo = self.bus.read_byte(tmp.wrapping_add(2));
-		let ophi = self.bus.read_byte(tmp.wrapping_add(3));
-		let opw = ((ophi as u16) << 8) | (oplo as u16);
-		
-		let d_bits = (opcode >> 3) & 7;
-		let s = opcode & 7;
-		let rp = (opcode >> 4) & 3;
-		let hlptr = self.read_rp(2);
-		
-		let s = match s {
-		    0b000 => self.b,
-		    0b001 => self.c,
-		    0b010 => self.d,
-		    0b011 => self.e,
-		    0b100 => self.h,
-		    0b101 => self.l,
-		    0b110 => self.bus.read_byte(hlptr),
-		    _ => self.a,
-		};
-		
-		let d = match d_bits {
-		    0b000 => self.b,
-		    0b001 => self.c,
-		    0b010 => self.d,
-		    0b011 => self.e,
-		    0b100 => self.h,
-		    0b101 => self.l,
-		    0b110 => self.bus.read_byte(hlptr),
-		    _ => self.a,
-		};
+		    match d_bits {
+			0 => self.b = tmp,
+			1 => self.c = tmp,
+			2 => self.d = tmp,
+			3 => self.e = tmp,
+			4 => self.h = tmp,
+			5 => self.l = tmp,
+			6 => {},
+			_ => self.a = tmp,
+		    };
+		},
+		0x41 | 0x51 | 0x61 |
+		0x49 | 0x59 | 0x69 | 0x79 => { //16 bit OUT
+		    let bctmp = self.read_rp(pfx, 0);
 
-		match opcode {
-		    0xe5 => { //PUSH IX
-			self.push_word(self.ix);
-		    },
-		    _ => {
-			todo!("unimplemented opcode DD {opcode:02X}");
-		    },
-		};
+		    if d_bits != 6 {
+			self.bus.write_io_byte(bctmp, d);
+		    } else {
+			self.bus.write_io_byte(bctmp, 0);
+		    }
+		},
+		0x42 | 0x52 | 0x62 | 0x72 => { //SBC HL, rp
+		    let s = self.read_rp(pfx, 2) as u32;
+		    let cflag = self.f.contains(PSW::C) as u32;
+		    let tmp = s.wrapping_sub(self.read_rp(pfx, rp) as u32).wrapping_sub(cflag);
+
+		    self.f.set(PSW::S, (tmp & 0x8000) != 0);
+		    self.f.set(PSW::Z, tmp == 0);
+		    self.f.set(PSW::F5, ((tmp >> 8) & (1 << 5)) != 0);
+		    self.f.set(PSW::H, ((s ^ tmp) & 0x1000) != 0);
+		    self.f.set(PSW::F3, ((tmp >> 8) & (1 << 3)) != 0);
+		    self.f.set(PSW::P, tmp > 0xffff);
+		    self.f.insert(PSW::N);
+		    self.f.set(PSW::C, tmp > 0xffff);
+		    
+		    self.write_rp(pfx, 2, tmp as u16);
+		},
+		0x4a | 0x5a | 0x6a | 0x7a => { //ADC HL, rp
+		    let s = self.read_rp(pfx, 2) as u32;
+		    let cflag = self.f.contains(PSW::C) as u32;
+		    let tmp = s.wrapping_add(self.read_rp(pfx, rp) as u32).wrapping_add(cflag);
+		    
+		    self.f.set(PSW::S, (tmp & 0x8000) != 0);
+		    self.f.set(PSW::Z, tmp == 0);
+		    self.f.set(PSW::F5, ((tmp >> 8) & (1 << 5)) != 0);
+		    self.f.set(PSW::H, ((s ^ tmp) & 0x1000) != 0);
+		    self.f.set(PSW::F3, ((tmp >> 8) & (1 << 3)) != 0);
+		    self.f.set(PSW::P, tmp > 0xffff);
+		    self.f.remove(PSW::N);
+		    self.f.set(PSW::C, tmp > 0xffff);
+		    
+		    self.write_rp(pfx, 2, tmp as u16);
+		},
+		0x43 | 0x53 | 0x63 | 0x73 => { //LD (nn), rp
+		    let tmp = self.read_rp(pfx, rp);
+		    self.bus.write_word(opw, tmp);
+		},
+		0x4b | 0x5b | 0x6b | 0x7b => { //LD rp, (nn)
+		    let tmp = self.bus.read_word(opw);
+		    self.write_rp(pfx, rp, tmp);
+		},
+		0x46 | 0x56 | 0x5e => { //IM y
+		    self.im = d;
+		},
+		0x44 => { //NEG
+		    self.a = self.a ^ 0x80;
+		},
+		0x47 => { //LD I, A
+		    self.i = self.a;
+		},
+		0x57 => { //LD A, I
+		    self.a = self.i;
+		},
+		0x4f => { //LD R, A
+		    self.r = self.a;
+		},
+		0x5f => { //LD A, R
+		    self.a = self.r;
+		},
+		0x45 => { //RETN
+		    self.iff = self.iff2;
+		    self.pc = self.pop_word();
+		},
+		0x4d => { //RETI
+		    self.pc = self.pop_word();
+		    //todo interrupt acknowledge stuff
+		},
+		0x6f => { //RLD
+		    let tmp = self.bus.read_byte(hlptr);
+		    let tmp2 = (tmp & 0xf0) >> 4;
+		    let tmp = ((tmp & 0xf0) >> 4) | ((tmp & 0x0f) << 4);
+		    let tmp3 = self.a & 0x0f;
+		    self.a = (self.a & 0xf0) | tmp2;
+		    let tmp = (tmp & 0xf0) | tmp3;
+		    self.bus.write_byte(hlptr, tmp);
+		},
+		0x67 => { //RRD
+		    let tmp = self.bus.read_byte(hlptr);
+		    let tmplo = tmp & 0x0f;
+		    let alo = (self.a & 0x0f) << 4;
+		    let tmphi = (tmp & 0xf0) >> 4;
+		    let tmp = (tmp & 0xf0) | tmphi;
+		    let tmp = (tmp & 0x0f) | alo;
+		    self.a = (self.a & 0xf0) | tmplo;
+		},
+		0xa0 => { //LDI
+		    let hl = self.read_rp(pfx, 2);
+		    let de = self.read_rp(pfx, 1);
+		    let bc = self.read_rp(pfx, 0);
+		    let tmp = self.bus.read_byte(hl);
+		    self.bus.write_byte(de, tmp);
+		    self.write_rp(pfx, 1, de.wrapping_add(1));
+		    self.write_rp(pfx, 2, hl.wrapping_add(1));
+		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
+
+		    self.f.remove(PSW::H);
+		    self.f.remove(PSW::N);
+		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+		},
+		0xb0 => { //LDIR
+		    let hl = self.read_rp(pfx, 2);
+		    let de = self.read_rp(pfx, 1);
+		    let bc = self.read_rp(pfx, 0);
+		    let tmp = self.bus.read_byte(hl);
+		    self.bus.write_byte(de, tmp);
+		    self.write_rp(pfx, 1, de.wrapping_add(1));
+		    self.write_rp(pfx, 2, hl.wrapping_add(1));
+		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
+		    
+		    self.f.remove(PSW::H);
+		    self.f.remove(PSW::N);
+		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+		    
+		    if bc.wrapping_sub(1) != 0 {
+			self.pc -= 2;
+		    }
+		},
+		0xa8 => { //LDD
+		    let hl = self.read_rp(pfx, 2);
+		    let de = self.read_rp(pfx, 1);
+		    let bc = self.read_rp(pfx, 0);
+		    let tmp = self.bus.read_byte(hl);
+		    self.bus.write_byte(de, tmp);
+		    self.write_rp(pfx, 1, de.wrapping_sub(1));
+		    self.write_rp(pfx, 2, hl.wrapping_sub(1));
+		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
+
+		    self.f.remove(PSW::H);
+		    self.f.remove(PSW::N);
+		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+		},
+		0xb8 => { //LDDR
+		    let hl = self.read_rp(pfx, 2);
+		    let de = self.read_rp(pfx, 1);
+		    let bc = self.read_rp(pfx, 0);
+		    let tmp = self.bus.read_byte(hl);
+		    self.bus.write_byte(de, tmp);
+		    self.write_rp(pfx, 1, de.wrapping_sub(1));
+		    self.write_rp(pfx, 2, hl.wrapping_sub(1));
+		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
+
+		    self.f.remove(PSW::H);
+		    self.f.remove(PSW::N);
+		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+
+		    if bc.wrapping_sub(1) != 0 {
+			self.pc -= 2;
+		    }
+		},
+		0xa1 => { //CPI
+		    let tmp = self.bus.read_byte(hlptr);
+		    let tmp = self.a.wrapping_sub(tmp);
+		    let bc = self.read_rp(pfx, 0);
+		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
+
+		    self.f.set(PSW::S, (tmp & 0x80) != 0);
+		    self.f.set(PSW::Z, tmp == 0);
+		    //todo H
+		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+		    self.f.insert(PSW::N);
+		},
+		0xb1 => { //CPIR
+		    let tmp = self.bus.read_byte(hlptr);
+		    let tmp = self.a.wrapping_sub(tmp);
+		    let bc = self.read_rp(pfx, 0);
+		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
+
+		    self.f.set(PSW::S, (tmp & 0x80) != 0);
+		    self.f.set(PSW::Z, tmp == 0);
+		    //todo H
+		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
+		    self.f.insert(PSW::N);
+
+		    if bc.wrapping_sub(1) != 0 {
+			self.pc -= 2;
+		    }
+		},
+		_ => {
+		    todo!("unimplemented instruction ED {opcode:02X}");
+		},
 	    },
+	    _ => panic!("bad prefix {pfx:04x}"),
 	};
 	    
 	self.cycles - oldcycles
@@ -1216,605 +1115,689 @@ impl Cpu {
 fn disas(pc: u16, pfx: u16, opcode: u8, op1: u8, opw: u16) {
     print!("{:04X} ", pc);
     match pfx {
-	0x00 | 0xdd | 0xfd => {
-	    match opcode {
-		0x00 => println!("NOP"),
-		0x01 => println!("LD BC, ${opw:04X}"),
-		0x02 => println!("LD [BC], A"),
-		0x03 => println!("INC BC"),
-		0x04 => println!("INC B"),
-		0x05 => println!("DEC B"),
-		0x06 => println!("LD B, ${op1:02X}"),
-		0x07 => println!("RLCA"),
-		0x08 => println!("EX AF, AF'"),
-		0x09 => match pfx {
-		    0xdd => println!("ADD IX, BC"),
-		    0xfd => println!("ADD IY, BC"),
-		    _ => println!("ADD HL, BC"),
-		},
-		0x0A => println!("LD A, [BC]"),
-		0x0B => println!("DEC BC"),
-		0x0C => println!("INC C"),
-		0x0D => println!("DEC C"),
-		0x0E => println!("LD C, ${op1:02X}"),
-		0x0F => println!("RRCA"),
-		0x10 => println!("DJNZ ${op1:02X}"), //todo calculate target, same for JRs
-		0x11 => println!("LD DE, ${opw:04X}"),
-		0x12 => println!("LD [DE], A"),
-		0x13 => println!("INC DE"),
-		0x14 => println!("INC D"),
-		0x15 => println!("DEC D"),
-		0x16 => println!("LD D, ${op1:02X}"),
-		0x17 => println!("RLA"),
-		0x18 => println!("JR ${op1:02X}"),
-		0x19 => match pfx {
-		    0xdd => println!("ADD IX, DE"),
-		    0xfd => println!("ADD IY, DE"),
-		    _ => println!("ADD HL, DE"),
-		},
-		0x1A => println!("LD A, [DE]"),
-		0x1B => println!("DEC DE"),
-		0x1C => println!("INC E"),
-		0x1D => println!("DEC E"),
-		0x1E => println!("LD E, ${op1:02X}"),
-		0x1F => println!("RRA"),
-		0x20 => println!("JR NZ, ${op1:02X}"),
-		0x21 => match pfx {
-		    0xdd => println!("LD IX, ${opw:04X}"),
-		    0xfd => println!("LD IY, ${opw:04X}"),
-		    _ => println!("LD HL, ${opw:04X}"),
-		},
-		0x22 => match pfx {
-		    0xdd => println!("LD [${opw:04X}], IX"),
-		    0xfd => println!("LD [${opw:04X}], IY"),
-		    _ => println!("LD [${opw:04X}], HL"),
-		},
-		0x23 => match pfx {
-		    0xdd => println!("INC IX"),
-		    0xfd => println!("INC IY"),
-		    _ => println!("INC HL"),
-		},
-		0x24 => match pfx {
-		    0xdd => println!("INC IXh"),
-		    0xfd => println!("INC IYh"),
-		    _ => println!("INC H"),
-		},
-		0x25 => match pfx {
-		    0xdd => println!("DEC IXh"),
-		    0xfd => println!("DEC IYh"),
-		    _ => println!("DEC H"),
-		},
-		0x26 => match pfx {
-		    0xdd => println!("LD IXh, ${op1:02X}"),
-		    0xfd => println!("LD IYh, ${op1:02X}"),
-		    _ => println!("LD H, ${op1:02X}"),
-		},
-		0x27 => println!("DAA"),
-		0x28 => println!("JR Z, ${op1:02X}"),
-		0x29 => match pfx {
-		    0xdd => println!("ADD IX, IX"),
-		    0xfd => println!("ADD IY, IY"),
-		    _ => println!("ADD HL, HL"),
-		},
-		0x2A => match pfx {
-		    0xdd => println!("LD IX, [${opw:04X}]"),
-		    0xfd => println!("LD IY, [${opw:04X}]"),
-		    _ => println!("LD HL, [${opw:04X}]"),
-		},
-		0x2B => match pfx {
-		    0xdd => println!("DEC IX"),
-		    0xfd => println!("DEC IY"),
-		    _ => println!("DEC HL"),
-		},
-		0x2C => match pfx {
-		    0xdd => println!("INC IXl"),
-		    0xfd => println!("INC IYl"),
-		    _ => println!("INC L"),
-		},
-		0x2D => match pfx {
-		    0xdd => println!("DEC IXl"),
-		    0xfd => println!("DEC IYl"),
-		    _ => println!("DEC L"),
-		},
-		0x2E => match pfx {
-		    0xdd => println!("LD IXl, ${op1:02X}"),
-		    0xfd => println!("LD IYl, ${op1:02X}"),
-		    _ => println!("LD L, ${op1:02X}"),
-		},
-		0x2F => println!("CPL"),
-		0x30 => println!("JR NC, ${op1:02X}"),
-		0x31 => println!("LD SP, ${opw:04X}"),
-		0x32 => println!("LD [${opw:04X}], A"),
-		0x33 => println!("INC SP"),
-		0x34 => match pfx {
-		    0xdd => println!("INC [IX + {}]", op1 as i8),
-		    0xfd => println!("INC [IY + {}]", op1 as i8),
-		    _ => println!("INC [HL]"),
-		},
-		0x35 => match pfx {
-		    0xdd => println!("DEC [IX + {}]", op1 as i8),
-		    0xfd => println!("DEC [IY + {}]", op1 as i8),
-		    _ => println!("DEC [HL]"),
-		},
-		0x36 => match pfx {
-		    0xdd => println!("LD [IX + {}], ${op1:02X}", op1 as i8),
-		    0xfd => println!("LD [IY + {}], ${op1:02X}", op1 as i8),
-		    _ => println!("LD [HL], ${op1:02X}"),
-		},
-		0x37 => println!("SCF"),
-		0x38 => println!("JR C, ${op1:02X}"),
-		0x39 => match pfx {
-		    0xdd => println!("ADD IX, SP"),
-		    0xfd => println!("ADD IY, SP"),
-		    _ => println!("ADD HL, SP"),
-		},
-		0x3A => println!("LD A, [${opw:04X}]"),
-		0x3B => println!("DEC SP"),
-		0x3C => println!("INC A"),
-		0x3D => println!("DEC A"),
-		0x3E => println!("LD A, ${op1:02X}"),
-		0x3F => println!("CCF"),
-		0x40 => println!("LD B, B"),
-		0x41 => println!("LD B, C"),
-		0x42 => println!("LD B, D"),
-		0x43 => println!("LD B, E"),
-		0x44 => match pfx {
-		    0xdd => println!("LD B, IXh"),
-		    0xfd => println!("LD B, IYh"),
-		    _ => println!("LD B, H"),
-		},
-		0x45 => match pfx {
-		    0xdd => println!("LD B, IXl"),
-		    0xfd => println!("LD B, IYl"),
-		    _ => println!("LD B, L"),
-		},
-		0x46 => match pfx {
-		    0xdd => println!("LD B, [IX + {}]", op1 as i8),
-		    0xfd => println!("LD B, [IY + {}]", op1 as i8),
-		    _ => println!("LD B, [HL]"),
-		},
-		0x47 => println!("LD B, A"),
-		0x48 => println!("LD C, B"),
-		0x49 => println!("LD C, C"),
-		0x4A => println!("LD C, D"),
-		0x4B => println!("LD C, E"),
-		0x4C => match pfx {
-		    0xdd => println!("LD C, IXh"),
-		    0xfd => println!("LD C, IYh"),
-		    _ => println!("LD C, H"),
-		},
-		0x4D => match pfx {
-		    0xdd => println!("LD C, IXl"),
-		    0xfd => println!("LD C, IYl"),
-		    _ => println!("LD C, L"),
-		},
-		0x4E => match pfx {
-		    0xdd => println!("LD C, [IX + {}]", op1 as i8),
-		    0xfd => println!("LD C, [IY + {}]", op1 as i8),
-		    _ => println!("LD C, [HL]"),
-		},
-		0x4F => println!("LD C, A"),
-		0x50 => println!("LD D, B"),
-		0x51 => println!("LD D, C"),
-		0x52 => println!("LD D, D"),
-		0x53 => println!("LD D, E"),
-		0x54 => match pfx {
-		    0xdd => println!("LD D, IXh"),
-		    0xfd => println!("LD D, IYh"),
-		    _ => println!("LD D, H"),
-		},
-		0x55 => match pfx {
-		    0xdd => println!("LD D, IXl"),
-		    0xfd => println!("LD D, IYl"),
-		    _ => println!("LD D, L"),
-		},
-		0x56 => match pfx {
-		    0xdd => println!("LD D, [IX + {}]", op1 as i8),
-		    0xfd => println!("LD D, [IY + {}]", op1 as i8),
-		    _ => println!("LD D, [HL]"),
-		},
-		0x57 => println!("LD D, A"),
-		0x58 => println!("LD E, B"),
-		0x59 => println!("LD E, C"),
-		0x5A => println!("LD E, D"),
-		0x5B => println!("LD E, E"),
-		0x5C => match pfx {
-		    0xdd => println!("LD E, IXh"),
-		    0xfd => println!("LD E, IYh"),
-		    _ => println!("LD E, H"),
-		},
-		0x5D => match pfx {
-		    0xdd => println!("LD E, IXl"),
-		    0xfd => println!("LD E, IYl"),
-		    _ => println!("LD E, L"),
-		},
-		0x5E => match pfx {
-		    0xdd => println!("LD E, [IX + {}]", op1 as i8),
-		    0xfd => println!("LD E, [IY + {}]", op1 as i8),
-		    _ => println!("LD E, [HL]"),
-		},
-		0x5F => println!("LD E, A"),
-		0x60 => match pfx {
-		    0xdd => println!("LD IXh, B"),
-		    0xfd => println!("LD IYh, B"),
-		    _ => println!("LD H, B"),
-		},
-		0x61 => match pfx {
-		    0xdd => println!("LD IXh, C"),
-		    0xfd => println!("LD IYh, C"),
-		    _ => println!("LD H, C"),
-		},
-		0x62 => match pfx {
-		    0xdd => println!("LD IXh, D"),
-		    0xfd => println!("LD IYh, D"),
-		    _ => println!("LD H, D"),
-		},
-		0x63 => match pfx {
-		    0xdd => println!("LD IXh, E"),
-		    0xfd => println!("LD IYh, E"),
-		    _ => println!("LD H, B"),
-		},
-		0x64 => match pfx {
-		    0xdd => println!("LD IXh, IXh"),
-		    0xfd => println!("LD IYh, IYh"),
-		    _ => println!("LD H, H"),
-		},
-		0x65 => match pfx {
-		    0xdd => println!("LD IXh, IXl"),
-		    0xfd => println!("LD IYh, IYl"),
-		    _ => println!("LD H, L"),
-		},
-		0x66 => match pfx {
-		    0xdd => println!("LD H, [IX + {}]", op1 as i8),
-		    0xfd => println!("LD H, [IY + {}]", op1 as i8),
-		    _ => println!("LD H, [HL]"),
-		},
-		0x67 => match pfx {
-		    0xdd => println!("LD IXh, A"),
-		    0xfd => println!("LD IYh, A"),
-		    _ => println!("LD H, A"),
-		},
-		0x68 => match pfx {
-		    0xdd => println!("LD IXl, B"),
-		    0xfd => println!("LD IYl, B"),
-		    _ => println!("LD L, B"),
-		},
-		0x69 => match pfx {
-		    0xdd => println!("LD IXl, C"),
-		    0xfd => println!("LD IYl, C"),
-		    _ => println!("LD L, C"),
-		},
-		0x6A => match pfx {
-		    0xdd => println!("LD IXl, D"),
-		    0xfd => println!("LD IYl, D"),
-		    _ => println!("LD L, D"),
-		},
-		0x6B => match pfx {
-		    0xdd => println!("LD IXl, E"),
-		    0xfd => println!("LD IYl, E"),
-		    _ => println!("LD L, B"),
-		},
-		0x6C => match pfx {
-		    0xdd => println!("LD IXl, IXh"),
-		    0xfd => println!("LD IYl, IYh"),
-		    _ => println!("LD L, H"),
-		},
-		0x6D => match pfx {
-		    0xdd => println!("LD IXl, IXl"),
-		    0xfd => println!("LD IYl, IYl"),
-		    _ => println!("LD L, L"),
-		},
-		0x6E => match pfx {
-		    0xdd => println!("LD L, [IX + {}]", op1 as i8),
-		    0xfd => println!("LD L, [IY + {}]", op1 as i8),
-		    _ => println!("LD L, [HL]"),
-		},
-		0x6F => match pfx {
-		    0xdd => println!("LD IXl, A"),
-		    0xfd => println!("LD IYl, A"),
-		    _ => println!("LD L, A"),
-		},
-		0x70 => match pfx {
-		    0xdd => println!("LD [IX + {}], B", op1 as i8),
-		    0xfd => println!("LD [IY + {}], B", op1 as i8),
-		    _ => println!("LD [HL], B"),
-		},
-		0x71 => match pfx {
-		    0xdd => println!("LD [IX + {}], C", op1 as i8),
-		    0xfd => println!("LD [IY + {}], C", op1 as i8),
-		    _ => println!("LD [HL], C"),
-		},
-		0x72 => match pfx {
-		    0xdd => println!("LD [IX + {}], D", op1 as i8),
-		    0xfd => println!("LD [IY + {}], D", op1 as i8),
-		    _ => println!("LD [HL], D"),
-		},
-		0x73 => match pfx {
-		    0xdd => println!("LD [IX + {}], E", op1 as i8),
-		    0xfd => println!("LD [IY + {}], E", op1 as i8),
-		    _ => println!("LD [HL], E"),
-		},
-		0x74 => match pfx {
-		    0xdd => println!("LD [IX + {}], H", op1 as i8),
-		    0xfd => println!("LD [IY + {}], H", op1 as i8),
-		    _ => println!("LD [HL], H"),
-		},
-		0x75 => match pfx {
-		    0xdd => println!("LD [IX + {}], L", op1 as i8),
-		    0xfd => println!("LD [IY + {}], L", op1 as i8),
-		    _ => println!("LD [HL], L"),
-		},
-		0x76 => println!("HLT"),
-		0x77 => match pfx {
-		    0xdd => println!("LD [IX + {}], A", op1 as i8),
-		    0xfd => println!("LD [IY + {}], A", op1 as i8),
-		    _ => println!("LD [HL], A"),
-		},
-		0x78 => println!("LD A, B"),
-		0x79 => println!("LD A, C"),
-		0x7A => println!("LD A, D"),
-		0x7B => println!("LD A, E"),
-		0x7C => match pfx {
-		    0xdd => println!("LD A, IXh"),
-		    0xfd => println!("LD A, IYh"),
-		    _ => println!("LD A, H"),
-		},
-		0x7D => match pfx {
-		    0xdd => println!("LD A, IXl"),
-		    0xfd => println!("LD A, IYl"),
-		    _ => println!("LD A, L"),
-		},
-		0x7E => match pfx {
-		    0xdd => println!("LD A, [IX + {}]", op1 as i8),
-		    0xfd => println!("LD A, [IY + {}]", op1 as i8),
-		    _ => println!("LD A, [HL]"),
-		},
-		0x7F => println!("LD A, A"),
-		0x80 => println!("ADD A, B"),
-		0x81 => println!("ADD A, C"),
-		0x82 => println!("ADD A, D"),
-		0x83 => println!("ADD A, E"),
-		0x84 => match pfx {
-		    0xdd => println!("ADD A, IXh"),
-		    0xfd => println!("ADD A, IYh"),
-		    _ => println!("ADD A, H"),
-		},
-		0x85 => match pfx {
-		    0xdd => println!("ADD A, IXl"),
-		    0xfd => println!("ADD A, IYl"),
-		    _ => println!("ADD A, L"),
-		},
-		0x86 => match pfx {
-		    0xdd => println!("ADD A, [IX + {}]", op1 as i8),
-		    0xfd => println!("ADD A, [IY + {}]", op1 as i8),
-		    _ => println!("ADD A, [HL]"),
-		},
-		0x87 => println!("ADD A, A"),
-		0x88 => println!("ADC A, B"),
-		0x89 => println!("ADC A, C"),
-		0x8A => println!("ADC A, D"),
-		0x8B => println!("ADC A, E"),
-		0x8C => match pfx {
-		    0xdd => println!("ADC A, IXh"),
-		    0xfd => println!("ADC A, IYh"),
-		    _ => println!("ADC A, H"),
-		},
-		0x8D => match pfx {
-		    0xdd => println!("ADC A, IXl"),
-		    0xfd => println!("ADC A, IYl"),
-		    _ => println!("ADC A, L"),
-		},
-		0x8E => match pfx {
-		    0xdd => println!("ADC A, [IX + {}]", op1 as i8),
-		    0xfd => println!("ADC A, [IY + {}]", op1 as i8),
-		    _ => println!("ADC A, [HL]"),
-		},
-		0x8F => println!("ADC A, A"),
-		0x90 => println!("SUB A, B"),
-		0x91 => println!("SUB A, C"),
-		0x92 => println!("SUB A, D"),
-		0x93 => println!("SUB A, E"),
-		0x94 => match pfx {
-		    0xdd => println!("SUB A, IXh"),
-		    0xfd => println!("SUB A, IYh"),
-		    _ => println!("SUB A, H"),
-		},
-		0x95 => match pfx {
-		    0xdd => println!("SUB A, IXl"),
-		    0xfd => println!("SUB A, IYl"),
-		    _ => println!("SUB A, L"),
-		},
-		0x96 => match pfx {
-		    0xdd => println!("SUB A, [IX + {}]", op1 as i8),
-		    0xfd => println!("SUB A, [IY + {}]", op1 as i8),
-		    _ => println!("SUB A, [HL]"),
-		},
-		0x97 => println!("SUB A, A"),
-		0x98 => println!("SBC A, B"),
-		0x99 => println!("SBC A, C"),
-		0x9A => println!("SBC A, D"),
-		0x9B => println!("SBC A, E"),
-		0x9C => match pfx {
-		    0xdd => println!("SBC A, IXh"),
-		    0xfd => println!("SBC A, IYh"),
-		    _ => println!("SBC A, H"),
-		},
-		0x9D => match pfx {
-		    0xdd => println!("SBC A, IXl"),
-		    0xfd => println!("SBC A, IYl"),
-		    _ => println!("SBC A, L"),
-		},
-		0x9E => match pfx {
-		    0xdd => println!("SBC A, [IX + {}]", op1 as i8),
-		    0xfd => println!("SBC A, [IY + {}]", op1 as i8),
-		    _ => println!("SBC A, [HL]"),
-		},
-		0x9F => println!("SBC A, A"),
-		0xA0 => println!("AND A, B"),
-		0xA1 => println!("AND A, C"),
-		0xA2 => println!("AND A, D"),
-		0xA3 => println!("AND A, E"),
-		0xA4 => match pfx {
-		    0xdd => println!("AND A, IXh"),
-		    0xfd => println!("AND A, IYh"),
-		    _ => println!("AND A, H"),
-		},
-		0xA5 => match pfx {
-		    0xdd => println!("AND A, IXl"),
-		    0xfd => println!("AND A, IYl"),
-		    _ => println!("AND A, L"),
-		},
-		0xA6 => match pfx {
-		    0xdd => println!("AND A, [IX + {}]", op1 as i8),
-		    0xfd => println!("AND A, [IY + {}]", op1 as i8),
-		    _ => println!("AND A, [HL]"),
-		},
-		0xA7 => println!("AND A, A"),
-		0xA8 => println!("XOR A, B"),
-		0xA9 => println!("XOR A, C"),
-		0xAA => println!("XOR A, D"),
-		0xAB => println!("XOR A, E"),
-		0xAC => match pfx {
-		    0xdd => println!("XOR A, IXh"),
-		    0xfd => println!("XOR A, IYh"),
-		    _ => println!("XOR A, H"),
-		},
-		0xAD => match pfx {
-		    0xdd => println!("XOR A, IXl"),
-		    0xfd => println!("XOR A, IYl"),
-		    _ => println!("XOR A, L"),
-		},
-		0xAE => match pfx {
-		    0xdd => println!("XOR A, [IX + {}]", op1 as i8),
-		    0xfd => println!("XOR A, [IY + {}]", op1 as i8),
-		    _ => println!("XOR A, [HL]"),
-		},
-		0xAF => println!("XOR A, A"),
-		0xB0 => println!("OR A, B"),
-		0xB1 => println!("OR A, C"),
-		0xB2 => println!("OR A, D"),
-		0xB3 => println!("OR A, E"),
-		0xB4 => match pfx {
-		    0xdd => println!("OR A, IXh"),
-		    0xfd => println!("OR A, IYh"),
-		    _ => println!("OR A, H"),
-		},
-		0xB5 => match pfx {
-		    0xdd => println!("OR A, IXl"),
-		    0xfd => println!("OR A, IYl"),
-		    _ => println!("OR A, L"),
-		},
-		0xB6 => match pfx {
-		    0xdd => println!("OR A, [IX + {}]", op1 as i8),
-		    0xfd => println!("OR A, [IY + {}]", op1 as i8),
-		    _ => println!("OR A, [HL]"),
-		},
-		0xB7 => println!("OR A, A"),
-		0xB8 => println!("CP A, B"),
-		0xB9 => println!("CP A, C"),
-		0xBA => println!("CP A, D"),
-		0xBB => println!("CP A, E"),
-		0xBC =>  match pfx {
-		    0xdd => println!("CP A, IXh"),
-		    0xfd => println!("CP A, IYh"),
-		    _ => println!("CP A, H"),
-		},
-		0xBD => match pfx {
-		    0xdd => println!("CP A, IXl"),
-		    0xfd => println!("CP A, IYl"),
-		    _ => println!("CP A, L"),
-		},
-		0xBE => match pfx {
-		    0xdd => println!("CP A, [IX + {}]", op1 as i8),
-		    0xfd => println!("CP A, [IY + {}]", op1 as i8),
-		    _ => println!("CP A, [HL]"),
-		},
-		0xBF => println!("CP A, A"),
-		0xC0 => println!("RET NZ"),
-		0xC1 => println!("POP BC"),
-		0xC2 => println!("JP NZ, ${opw:04X}"),
-		0xC3 => println!("JP ${opw:04X}"),
-		0xC4 => println!("CALL NZ, ${opw:04X}"),
-		0xC5 => println!("PUSH BC"),
-		0xC6 => println!("ADD A, ${op1:02X}"),
-		0xC7 => println!("RST $00"),
-		0xC8 => println!("RET Z"),
-		0xC9 => println!("RET"),
-		0xCA => println!("JP Z, ${opw:04X}"),
-		0xCB => println!("prefix cb"),
-		0xCC => println!("CALL Z, ${opw:04X}"),
-		0xCD => println!("CALL ${opw:04X}"),
-		0xCE => println!("ADC A, ${op1:02X}"),
-		0xCF => println!("RST $08"),
-		0xD0 => println!("RET NC"),
-		0xD1 => println!("POP DE"),
-		0xD2 => println!("JP NC, ${opw:04X}"),
-		0xD3 => println!("OUT ${op1:02X}"),
-		0xD4 => println!("CALL NC, ${opw:04X}"),
-		0xD5 => println!("PUSH DE"),
-		0xD6 => println!("SUB A, ${op1:02X}"),
-		0xD7 => println!("RST $10"),
-		0xD8 => println!("RET C"),
-		0xD9 => println!("EXX"),
-		0xDA => println!("JP C, ${opw:04X}"),
-		0xDB => println!("IN ${op1:02X}"),
-		0xDC => println!("CALL C, ${opw:04X}"),
-		0xDD => println!("prefix dd"),
-		0xDE => println!("SBC A, ${op1:02X}"),
-		0xDF => println!("RST $18"),
-		0xE0 => println!("RET PO"),
-		0xE1 => match pfx {
-		    0xdd => println!("POP IX"),
-		    0xfd => println!("POP IY"),
-		    _ => println!("POP HL"),
-		},
-		0xE2 => println!("JP PO, ${opw:04X}"),
-		0xE3 => match pfx {
-		    0xdd => println!("EX [SP], IX"),
-		    0xfd => println!("EX [SP], IY"),
-		    _ => println!("EX [SP], HL"),
-		},
-		0xE4 => println!("CALL PO, ${opw:04X}"),
-		0xE5 => match pfx {
-		    0xdd => println!("PUSH IX"),
-		    0xfd => println!("PUSH IY"),
-		    _ => println!("PUSH HL"),
-		},
-		0xE6 => println!("AND A, ${op1:02X}"),
-		0xE7 => println!("RST $20"),
-		0xE8 => println!("RET PE"),
-		0xE9 => match pfx {
-		    0xdd => println!("JP IX"),
-		    0xfd => println!("JP IY"),
-		    _ => println!("JP HL"),
-		},
-		0xEA => println!("JP PE, ${opw:04X}"),
-		0xEB => println!("EX DE, HL"),
-		0xEC => println!("CALL PE, ${opw:04X}"),
-		0xED => println!("prefix ed"),
-		0xEE => println!("XOR A, ${op1:02X}"),
-		0xEF => println!("RST $28"),
-		0xF0 => println!("RET P"),
-		0xF1 => println!("POP AF"),
-		0xF2 => println!("JP P, ${opw:04X}"),
-		0xF3 => println!("DI"),
-		0xF4 => println!("CALL P, ${opw:04X}"),
-		0xF5 => println!("PUSH AF"),
-		0xF6 => println!("OR A, ${op1:02X}"),
-		0xF7 => println!("RST $30"),
-		0xF8 => println!("RET M"),
-		0xF9 => match pfx {
-		    0xdd => println!("LD SP, IX"),
-		    0xfd => println!("LD SP, IY"),
-		    _ => println!("LD SP, HL"),
-		},
-		0xFA => println!("JP M, ${opw:04X}"),
-		0xFB => println!("EI"),
-		0xFC => println!("CALL M, ${opw:04X}"),
-		0xFD => println!("prefix fd"),
-		0xFE => println!("CP A, ${op1:02X}"),
-		0xFF => println!("RST $38"),
-	    };
+	0x00 | 0xdd | 0xfd => match opcode {
+	    0x00 => println!("NOP"),
+	    0x01 => println!("LD BC, ${opw:04X}"),
+	    0x02 => println!("LD [BC], A"),
+	    0x03 => println!("INC BC"),
+	    0x04 => println!("INC B"),
+	    0x05 => println!("DEC B"),
+	    0x06 => println!("LD B, ${op1:02X}"),
+	    0x07 => println!("RLCA"),
+	    0x08 => println!("EX AF, AF'"),
+	    0x09 => match pfx {
+		0xdd => println!("ADD IX, BC"),
+		0xfd => println!("ADD IY, BC"),
+		_ => println!("ADD HL, BC"),
+	    },
+	    0x0A => println!("LD A, [BC]"),
+	    0x0B => println!("DEC BC"),
+	    0x0C => println!("INC C"),
+	    0x0D => println!("DEC C"),
+	    0x0E => println!("LD C, ${op1:02X}"),
+	    0x0F => println!("RRCA"),
+	    0x10 => println!("DJNZ ${op1:02X}"), //todo calculate target, same for JRs
+	    0x11 => println!("LD DE, ${opw:04X}"),
+	    0x12 => println!("LD [DE], A"),
+	    0x13 => println!("INC DE"),
+	    0x14 => println!("INC D"),
+	    0x15 => println!("DEC D"),
+	    0x16 => println!("LD D, ${op1:02X}"),
+	    0x17 => println!("RLA"),
+	    0x18 => println!("JR ${op1:02X}"),
+	    0x19 => match pfx {
+		0xdd => println!("ADD IX, DE"),
+		0xfd => println!("ADD IY, DE"),
+		_ => println!("ADD HL, DE"),
+	    },
+	    0x1A => println!("LD A, [DE]"),
+	    0x1B => println!("DEC DE"),
+	    0x1C => println!("INC E"),
+	    0x1D => println!("DEC E"),
+	    0x1E => println!("LD E, ${op1:02X}"),
+	    0x1F => println!("RRA"),
+	    0x20 => println!("JR NZ, ${op1:02X}"),
+	    0x21 => match pfx {
+		0xdd => println!("LD IX, ${opw:04X}"),
+		0xfd => println!("LD IY, ${opw:04X}"),
+		_ => println!("LD HL, ${opw:04X}"),
+	    },
+	    0x22 => match pfx {
+		0xdd => println!("LD [${opw:04X}], IX"),
+		0xfd => println!("LD [${opw:04X}], IY"),
+		_ => println!("LD [${opw:04X}], HL"),
+	    },
+	    0x23 => match pfx {
+		0xdd => println!("INC IX"),
+		0xfd => println!("INC IY"),
+		_ => println!("INC HL"),
+	    },
+	    0x24 => match pfx {
+		0xdd => println!("INC IXh"),
+		0xfd => println!("INC IYh"),
+		_ => println!("INC H"),
+	    },
+	    0x25 => match pfx {
+		0xdd => println!("DEC IXh"),
+		0xfd => println!("DEC IYh"),
+		_ => println!("DEC H"),
+	    },
+	    0x26 => match pfx {
+		0xdd => println!("LD IXh, ${op1:02X}"),
+		0xfd => println!("LD IYh, ${op1:02X}"),
+		_ => println!("LD H, ${op1:02X}"),
+	    },
+	    0x27 => println!("DAA"),
+	    0x28 => println!("JR Z, ${op1:02X}"),
+	    0x29 => match pfx {
+		0xdd => println!("ADD IX, IX"),
+		0xfd => println!("ADD IY, IY"),
+		_ => println!("ADD HL, HL"),
+	    },
+	    0x2A => match pfx {
+		0xdd => println!("LD IX, [${opw:04X}]"),
+		0xfd => println!("LD IY, [${opw:04X}]"),
+		_ => println!("LD HL, [${opw:04X}]"),
+	    },
+	    0x2B => match pfx {
+		0xdd => println!("DEC IX"),
+		0xfd => println!("DEC IY"),
+		_ => println!("DEC HL"),
+	    },
+	    0x2C => match pfx {
+		0xdd => println!("INC IXl"),
+		0xfd => println!("INC IYl"),
+		_ => println!("INC L"),
+	    },
+	    0x2D => match pfx {
+		0xdd => println!("DEC IXl"),
+		0xfd => println!("DEC IYl"),
+		_ => println!("DEC L"),
+	    },
+	    0x2E => match pfx {
+		0xdd => println!("LD IXl, ${op1:02X}"),
+		0xfd => println!("LD IYl, ${op1:02X}"),
+		_ => println!("LD L, ${op1:02X}"),
+	    },
+	    0x2F => println!("CPL"),
+	    0x30 => println!("JR NC, ${op1:02X}"),
+	    0x31 => println!("LD SP, ${opw:04X}"),
+	    0x32 => println!("LD [${opw:04X}], A"),
+	    0x33 => println!("INC SP"),
+	    0x34 => match pfx {
+		0xdd => println!("INC [IX + {}]", op1 as i8),
+		0xfd => println!("INC [IY + {}]", op1 as i8),
+		_ => println!("INC [HL]"),
+	    },
+	    0x35 => match pfx {
+		0xdd => println!("DEC [IX + {}]", op1 as i8),
+		0xfd => println!("DEC [IY + {}]", op1 as i8),
+		_ => println!("DEC [HL]"),
+	    },
+	    0x36 => match pfx {
+		0xdd => println!("LD [IX + {}], ${op1:02X}", op1 as i8),
+		0xfd => println!("LD [IY + {}], ${op1:02X}", op1 as i8),
+		_ => println!("LD [HL], ${op1:02X}"),
+	    },
+	    0x37 => println!("SCF"),
+	    0x38 => println!("JR C, ${op1:02X}"),
+	    0x39 => match pfx {
+		0xdd => println!("ADD IX, SP"),
+		0xfd => println!("ADD IY, SP"),
+		_ => println!("ADD HL, SP"),
+	    },
+	    0x3A => println!("LD A, [${opw:04X}]"),
+	    0x3B => println!("DEC SP"),
+	    0x3C => println!("INC A"),
+	    0x3D => println!("DEC A"),
+	    0x3E => println!("LD A, ${op1:02X}"),
+	    0x3F => println!("CCF"),
+	    0x40 => println!("LD B, B"),
+	    0x41 => println!("LD B, C"),
+	    0x42 => println!("LD B, D"),
+	    0x43 => println!("LD B, E"),
+	    0x44 => match pfx {
+		0xdd => println!("LD B, IXh"),
+		0xfd => println!("LD B, IYh"),
+		_ => println!("LD B, H"),
+	    },
+	    0x45 => match pfx {
+		0xdd => println!("LD B, IXl"),
+		0xfd => println!("LD B, IYl"),
+		_ => println!("LD B, L"),
+	    },
+	    0x46 => match pfx {
+		0xdd => println!("LD B, [IX + {}]", op1 as i8),
+		0xfd => println!("LD B, [IY + {}]", op1 as i8),
+		_ => println!("LD B, [HL]"),
+	    },
+	    0x47 => println!("LD B, A"),
+	    0x48 => println!("LD C, B"),
+	    0x49 => println!("LD C, C"),
+	    0x4A => println!("LD C, D"),
+	    0x4B => println!("LD C, E"),
+	    0x4C => match pfx {
+		0xdd => println!("LD C, IXh"),
+		0xfd => println!("LD C, IYh"),
+		_ => println!("LD C, H"),
+	    },
+	    0x4D => match pfx {
+		0xdd => println!("LD C, IXl"),
+		0xfd => println!("LD C, IYl"),
+		_ => println!("LD C, L"),
+	    },
+	    0x4E => match pfx {
+		0xdd => println!("LD C, [IX + {}]", op1 as i8),
+		0xfd => println!("LD C, [IY + {}]", op1 as i8),
+		_ => println!("LD C, [HL]"),
+	    },
+	    0x4F => println!("LD C, A"),
+	    0x50 => println!("LD D, B"),
+	    0x51 => println!("LD D, C"),
+	    0x52 => println!("LD D, D"),
+	    0x53 => println!("LD D, E"),
+	    0x54 => match pfx {
+		0xdd => println!("LD D, IXh"),
+		0xfd => println!("LD D, IYh"),
+		_ => println!("LD D, H"),
+	    },
+	    0x55 => match pfx {
+		0xdd => println!("LD D, IXl"),
+		0xfd => println!("LD D, IYl"),
+		_ => println!("LD D, L"),
+	    },
+	    0x56 => match pfx {
+		0xdd => println!("LD D, [IX + {}]", op1 as i8),
+		0xfd => println!("LD D, [IY + {}]", op1 as i8),
+		_ => println!("LD D, [HL]"),
+	    },
+	    0x57 => println!("LD D, A"),
+	    0x58 => println!("LD E, B"),
+	    0x59 => println!("LD E, C"),
+	    0x5A => println!("LD E, D"),
+	    0x5B => println!("LD E, E"),
+	    0x5C => match pfx {
+		0xdd => println!("LD E, IXh"),
+		0xfd => println!("LD E, IYh"),
+		_ => println!("LD E, H"),
+	    },
+	    0x5D => match pfx {
+		0xdd => println!("LD E, IXl"),
+		0xfd => println!("LD E, IYl"),
+		_ => println!("LD E, L"),
+	    },
+	    0x5E => match pfx {
+		0xdd => println!("LD E, [IX + {}]", op1 as i8),
+		0xfd => println!("LD E, [IY + {}]", op1 as i8),
+		_ => println!("LD E, [HL]"),
+	    },
+	    0x5F => println!("LD E, A"),
+	    0x60 => match pfx {
+		0xdd => println!("LD IXh, B"),
+		0xfd => println!("LD IYh, B"),
+		_ => println!("LD H, B"),
+	    },
+	    0x61 => match pfx {
+		0xdd => println!("LD IXh, C"),
+		0xfd => println!("LD IYh, C"),
+		_ => println!("LD H, C"),
+	    },
+	    0x62 => match pfx {
+		0xdd => println!("LD IXh, D"),
+		0xfd => println!("LD IYh, D"),
+		_ => println!("LD H, D"),
+	    },
+	    0x63 => match pfx {
+		0xdd => println!("LD IXh, E"),
+		0xfd => println!("LD IYh, E"),
+		_ => println!("LD H, B"),
+	    },
+	    0x64 => match pfx {
+		0xdd => println!("LD IXh, IXh"),
+		0xfd => println!("LD IYh, IYh"),
+		_ => println!("LD H, H"),
+	    },
+	    0x65 => match pfx {
+		0xdd => println!("LD IXh, IXl"),
+		0xfd => println!("LD IYh, IYl"),
+		_ => println!("LD H, L"),
+	    },
+	    0x66 => match pfx {
+		0xdd => println!("LD H, [IX + {}]", op1 as i8),
+		0xfd => println!("LD H, [IY + {}]", op1 as i8),
+		_ => println!("LD H, [HL]"),
+	    },
+	    0x67 => match pfx {
+		0xdd => println!("LD IXh, A"),
+		0xfd => println!("LD IYh, A"),
+		_ => println!("LD H, A"),
+	    },
+	    0x68 => match pfx {
+		0xdd => println!("LD IXl, B"),
+		0xfd => println!("LD IYl, B"),
+		_ => println!("LD L, B"),
+	    },
+	    0x69 => match pfx {
+		0xdd => println!("LD IXl, C"),
+		0xfd => println!("LD IYl, C"),
+		_ => println!("LD L, C"),
+	    },
+	    0x6A => match pfx {
+		0xdd => println!("LD IXl, D"),
+		0xfd => println!("LD IYl, D"),
+		_ => println!("LD L, D"),
+	    },
+	    0x6B => match pfx {
+		0xdd => println!("LD IXl, E"),
+		0xfd => println!("LD IYl, E"),
+		_ => println!("LD L, B"),
+	    },
+	    0x6C => match pfx {
+		0xdd => println!("LD IXl, IXh"),
+		0xfd => println!("LD IYl, IYh"),
+		_ => println!("LD L, H"),
+	    },
+	    0x6D => match pfx {
+		0xdd => println!("LD IXl, IXl"),
+		0xfd => println!("LD IYl, IYl"),
+		_ => println!("LD L, L"),
+	    },
+	    0x6E => match pfx {
+		0xdd => println!("LD L, [IX + {}]", op1 as i8),
+		0xfd => println!("LD L, [IY + {}]", op1 as i8),
+		_ => println!("LD L, [HL]"),
+	    },
+	    0x6F => match pfx {
+		0xdd => println!("LD IXl, A"),
+		0xfd => println!("LD IYl, A"),
+		_ => println!("LD L, A"),
+	    },
+	    0x70 => match pfx {
+		0xdd => println!("LD [IX + {}], B", op1 as i8),
+		0xfd => println!("LD [IY + {}], B", op1 as i8),
+		_ => println!("LD [HL], B"),
+	    },
+	    0x71 => match pfx {
+		0xdd => println!("LD [IX + {}], C", op1 as i8),
+		0xfd => println!("LD [IY + {}], C", op1 as i8),
+		_ => println!("LD [HL], C"),
+	    },
+	    0x72 => match pfx {
+		0xdd => println!("LD [IX + {}], D", op1 as i8),
+		0xfd => println!("LD [IY + {}], D", op1 as i8),
+		_ => println!("LD [HL], D"),
+	    },
+	    0x73 => match pfx {
+		0xdd => println!("LD [IX + {}], E", op1 as i8),
+		0xfd => println!("LD [IY + {}], E", op1 as i8),
+		_ => println!("LD [HL], E"),
+	    },
+	    0x74 => match pfx {
+		0xdd => println!("LD [IX + {}], H", op1 as i8),
+		0xfd => println!("LD [IY + {}], H", op1 as i8),
+		_ => println!("LD [HL], H"),
+	    },
+	    0x75 => match pfx {
+		0xdd => println!("LD [IX + {}], L", op1 as i8),
+		0xfd => println!("LD [IY + {}], L", op1 as i8),
+		_ => println!("LD [HL], L"),
+	    },
+	    0x76 => println!("HLT"),
+	    0x77 => match pfx {
+		0xdd => println!("LD [IX + {}], A", op1 as i8),
+		0xfd => println!("LD [IY + {}], A", op1 as i8),
+		_ => println!("LD [HL], A"),
+	    },
+	    0x78 => println!("LD A, B"),
+	    0x79 => println!("LD A, C"),
+	    0x7A => println!("LD A, D"),
+	    0x7B => println!("LD A, E"),
+	    0x7C => match pfx {
+		0xdd => println!("LD A, IXh"),
+		0xfd => println!("LD A, IYh"),
+		_ => println!("LD A, H"),
+	    },
+	    0x7D => match pfx {
+		0xdd => println!("LD A, IXl"),
+		0xfd => println!("LD A, IYl"),
+		_ => println!("LD A, L"),
+	    },
+	    0x7E => match pfx {
+		0xdd => println!("LD A, [IX + {}]", op1 as i8),
+		0xfd => println!("LD A, [IY + {}]", op1 as i8),
+		_ => println!("LD A, [HL]"),
+	    },
+	    0x7F => println!("LD A, A"),
+	    0x80 => println!("ADD A, B"),
+	    0x81 => println!("ADD A, C"),
+	    0x82 => println!("ADD A, D"),
+	    0x83 => println!("ADD A, E"),
+	    0x84 => match pfx {
+		0xdd => println!("ADD A, IXh"),
+		0xfd => println!("ADD A, IYh"),
+		_ => println!("ADD A, H"),
+	    },
+	    0x85 => match pfx {
+		0xdd => println!("ADD A, IXl"),
+		0xfd => println!("ADD A, IYl"),
+		_ => println!("ADD A, L"),
+	    },
+	    0x86 => match pfx {
+		0xdd => println!("ADD A, [IX + {}]", op1 as i8),
+		0xfd => println!("ADD A, [IY + {}]", op1 as i8),
+		_ => println!("ADD A, [HL]"),
+	    },
+	    0x87 => println!("ADD A, A"),
+	    0x88 => println!("ADC A, B"),
+	    0x89 => println!("ADC A, C"),
+	    0x8A => println!("ADC A, D"),
+	    0x8B => println!("ADC A, E"),
+	    0x8C => match pfx {
+		0xdd => println!("ADC A, IXh"),
+		0xfd => println!("ADC A, IYh"),
+		_ => println!("ADC A, H"),
+	    },
+	    0x8D => match pfx {
+		0xdd => println!("ADC A, IXl"),
+		0xfd => println!("ADC A, IYl"),
+		_ => println!("ADC A, L"),
+	    },
+	    0x8E => match pfx {
+		0xdd => println!("ADC A, [IX + {}]", op1 as i8),
+		0xfd => println!("ADC A, [IY + {}]", op1 as i8),
+		_ => println!("ADC A, [HL]"),
+	    },
+	    0x8F => println!("ADC A, A"),
+	    0x90 => println!("SUB A, B"),
+	    0x91 => println!("SUB A, C"),
+	    0x92 => println!("SUB A, D"),
+	    0x93 => println!("SUB A, E"),
+	    0x94 => match pfx {
+		0xdd => println!("SUB A, IXh"),
+		0xfd => println!("SUB A, IYh"),
+		_ => println!("SUB A, H"),
+	    },
+	    0x95 => match pfx {
+		0xdd => println!("SUB A, IXl"),
+		0xfd => println!("SUB A, IYl"),
+		_ => println!("SUB A, L"),
+	    },
+	    0x96 => match pfx {
+		0xdd => println!("SUB A, [IX + {}]", op1 as i8),
+		0xfd => println!("SUB A, [IY + {}]", op1 as i8),
+		_ => println!("SUB A, [HL]"),
+	    },
+	    0x97 => println!("SUB A, A"),
+	    0x98 => println!("SBC A, B"),
+	    0x99 => println!("SBC A, C"),
+	    0x9A => println!("SBC A, D"),
+	    0x9B => println!("SBC A, E"),
+	    0x9C => match pfx {
+		0xdd => println!("SBC A, IXh"),
+		0xfd => println!("SBC A, IYh"),
+		_ => println!("SBC A, H"),
+	    },
+	    0x9D => match pfx {
+		0xdd => println!("SBC A, IXl"),
+		0xfd => println!("SBC A, IYl"),
+		_ => println!("SBC A, L"),
+	    },
+	    0x9E => match pfx {
+		0xdd => println!("SBC A, [IX + {}]", op1 as i8),
+		0xfd => println!("SBC A, [IY + {}]", op1 as i8),
+		_ => println!("SBC A, [HL]"),
+	    },
+	    0x9F => println!("SBC A, A"),
+	    0xA0 => println!("AND A, B"),
+	    0xA1 => println!("AND A, C"),
+	    0xA2 => println!("AND A, D"),
+	    0xA3 => println!("AND A, E"),
+	    0xA4 => match pfx {
+		0xdd => println!("AND A, IXh"),
+		0xfd => println!("AND A, IYh"),
+		_ => println!("AND A, H"),
+	    },
+	    0xA5 => match pfx {
+		0xdd => println!("AND A, IXl"),
+		0xfd => println!("AND A, IYl"),
+		_ => println!("AND A, L"),
+	    },
+	    0xA6 => match pfx {
+		0xdd => println!("AND A, [IX + {}]", op1 as i8),
+		0xfd => println!("AND A, [IY + {}]", op1 as i8),
+		_ => println!("AND A, [HL]"),
+	    },
+	    0xA7 => println!("AND A, A"),
+	    0xA8 => println!("XOR A, B"),
+	    0xA9 => println!("XOR A, C"),
+	    0xAA => println!("XOR A, D"),
+	    0xAB => println!("XOR A, E"),
+	    0xAC => match pfx {
+		0xdd => println!("XOR A, IXh"),
+		0xfd => println!("XOR A, IYh"),
+		_ => println!("XOR A, H"),
+	    },
+	    0xAD => match pfx {
+		0xdd => println!("XOR A, IXl"),
+		0xfd => println!("XOR A, IYl"),
+		_ => println!("XOR A, L"),
+	    },
+	    0xAE => match pfx {
+		0xdd => println!("XOR A, [IX + {}]", op1 as i8),
+		0xfd => println!("XOR A, [IY + {}]", op1 as i8),
+		_ => println!("XOR A, [HL]"),
+	    },
+	    0xAF => println!("XOR A, A"),
+	    0xB0 => println!("OR A, B"),
+	    0xB1 => println!("OR A, C"),
+	    0xB2 => println!("OR A, D"),
+	    0xB3 => println!("OR A, E"),
+	    0xB4 => match pfx {
+		0xdd => println!("OR A, IXh"),
+		0xfd => println!("OR A, IYh"),
+		_ => println!("OR A, H"),
+	    },
+	    0xB5 => match pfx {
+		0xdd => println!("OR A, IXl"),
+		0xfd => println!("OR A, IYl"),
+		_ => println!("OR A, L"),
+	    },
+	    0xB6 => match pfx {
+		0xdd => println!("OR A, [IX + {}]", op1 as i8),
+		0xfd => println!("OR A, [IY + {}]", op1 as i8),
+		_ => println!("OR A, [HL]"),
+	    },
+	    0xB7 => println!("OR A, A"),
+	    0xB8 => println!("CP A, B"),
+	    0xB9 => println!("CP A, C"),
+	    0xBA => println!("CP A, D"),
+	    0xBB => println!("CP A, E"),
+	    0xBC =>  match pfx {
+		0xdd => println!("CP A, IXh"),
+		0xfd => println!("CP A, IYh"),
+		_ => println!("CP A, H"),
+	    },
+	    0xBD => match pfx {
+		0xdd => println!("CP A, IXl"),
+		0xfd => println!("CP A, IYl"),
+		_ => println!("CP A, L"),
+	    },
+	    0xBE => match pfx {
+		0xdd => println!("CP A, [IX + {}]", op1 as i8),
+		0xfd => println!("CP A, [IY + {}]", op1 as i8),
+		_ => println!("CP A, [HL]"),
+	    },
+	    0xBF => println!("CP A, A"),
+	    0xC0 => println!("RET NZ"),
+	    0xC1 => println!("POP BC"),
+	    0xC2 => println!("JP NZ, ${opw:04X}"),
+	    0xC3 => println!("JP ${opw:04X}"),
+	    0xC4 => println!("CALL NZ, ${opw:04X}"),
+	    0xC5 => println!("PUSH BC"),
+	    0xC6 => println!("ADD A, ${op1:02X}"),
+	    0xC7 => println!("RST $00"),
+	    0xC8 => println!("RET Z"),
+	    0xC9 => println!("RET"),
+	    0xCA => println!("JP Z, ${opw:04X}"),
+	    0xCB => println!("prefix cb"),
+	    0xCC => println!("CALL Z, ${opw:04X}"),
+	    0xCD => println!("CALL ${opw:04X}"),
+	    0xCE => println!("ADC A, ${op1:02X}"),
+	    0xCF => println!("RST $08"),
+	    0xD0 => println!("RET NC"),
+	    0xD1 => println!("POP DE"),
+	    0xD2 => println!("JP NC, ${opw:04X}"),
+	    0xD3 => println!("OUT ${op1:02X}"),
+	    0xD4 => println!("CALL NC, ${opw:04X}"),
+	    0xD5 => println!("PUSH DE"),
+	    0xD6 => println!("SUB A, ${op1:02X}"),
+	    0xD7 => println!("RST $10"),
+	    0xD8 => println!("RET C"),
+	    0xD9 => println!("EXX"),
+	    0xDA => println!("JP C, ${opw:04X}"),
+	    0xDB => println!("IN ${op1:02X}"),
+	    0xDC => println!("CALL C, ${opw:04X}"),
+	    0xDD => println!("prefix dd"),
+	    0xDE => println!("SBC A, ${op1:02X}"),
+	    0xDF => println!("RST $18"),
+	    0xE0 => println!("RET PO"),
+	    0xE1 => match pfx {
+		0xdd => println!("POP IX"),
+		0xfd => println!("POP IY"),
+		_ => println!("POP HL"),
+	    },
+	    0xE2 => println!("JP PO, ${opw:04X}"),
+	    0xE3 => match pfx {
+		0xdd => println!("EX [SP], IX"),
+		0xfd => println!("EX [SP], IY"),
+		_ => println!("EX [SP], HL"),
+	    },
+	    0xE4 => println!("CALL PO, ${opw:04X}"),
+	    0xE5 => match pfx {
+		0xdd => println!("PUSH IX"),
+		0xfd => println!("PUSH IY"),
+		_ => println!("PUSH HL"),
+	    },
+	    0xE6 => println!("AND A, ${op1:02X}"),
+	    0xE7 => println!("RST $20"),
+	    0xE8 => println!("RET PE"),
+	    0xE9 => match pfx {
+		0xdd => println!("JP IX"),
+		0xfd => println!("JP IY"),
+		_ => println!("JP HL"),
+	    },
+	    0xEA => println!("JP PE, ${opw:04X}"),
+	    0xEB => println!("EX DE, HL"),
+	    0xEC => println!("CALL PE, ${opw:04X}"),
+	    0xED => println!("prefix ed"),
+	    0xEE => println!("XOR A, ${op1:02X}"),
+	    0xEF => println!("RST $28"),
+	    0xF0 => println!("RET P"),
+	    0xF1 => println!("POP AF"),
+	    0xF2 => println!("JP P, ${opw:04X}"),
+	    0xF3 => println!("DI"),
+	    0xF4 => println!("CALL P, ${opw:04X}"),
+	    0xF5 => println!("PUSH AF"),
+	    0xF6 => println!("OR A, ${op1:02X}"),
+	    0xF7 => println!("RST $30"),
+	    0xF8 => println!("RET M"),
+	    0xF9 => match pfx {
+		0xdd => println!("LD SP, IX"),
+		0xfd => println!("LD SP, IY"),
+		_ => println!("LD SP, HL"),
+	    },
+	    0xFA => println!("JP M, ${opw:04X}"),
+	    0xFB => println!("EI"),
+	    0xFC => println!("CALL M, ${opw:04X}"),
+	    0xFD => println!("prefix fd"),
+	    0xFE => println!("CP A, ${op1:02X}"),
+	    0xFF => println!("RST $38"),
+	},
+	0xed => match opcode {
+	    0x00 ..= 0x3f | 0x80 ..= 0x9f |
+	    0xa4 ..= 0xa7 | 0xb4 ..= 0xb7 |
+	    0xac ..= 0xaf | 0xbc ..= 0xbf |
+	    0xc0 ..= 0xff => println!("NOP"),
+	    0x40 => println!("IN B, [C]"),
+	    0x41 => println!("OUT [C], B"),
+	    0x42 => println!("SBC HL, BC"),
+	    0x43 => println!("LD [${opw:04X}], BC"),
+	    0x44 => println!("NEG"),
+	    0x45 => println!("RETN"),
+	    0x46 => println!("IM 0"),
+	    0x47 => println!("LD I, A"),
+	    0x48 => println!("IN C, [C]"),
+	    0x49 => println!("OUT [C], C"),
+	    0x4a => println!("ADC HL, BC"),
+	    0x4b => println!("LD BC, [${opw:04X}]"),
+	    0x4c => println!("NEG"),
+	    0x4d => println!("RETI"),
+	    0x4e => println!("IM 0"),
+	    0x4f => println!("LD R, A"),
+	    0x50 => println!("IN D, [C]"),
+	    0x51 => println!("OUT [C], D"),
+	    0x52 => println!("SBC HL, DE"),
+	    0x53 => println!("LD [${opw:04X}], DE"),
+	    0x54 => println!("NEG"),
+	    0x55 => println!("RETN"),
+	    0x56 => println!("IM 1"),
+	    0x57 => println!("LD A, I"),
+	    0x58 => println!("IN E, [C]"),
+	    0x59 => println!("OUT [C], E"),
+	    0x5a => println!("ADC HL, DE"),
+	    0x5b => println!("LD DE, [${opw:04X}]"),
+	    0x5c => println!("NEG"),
+	    0x5d => println!("RETN"),
+	    0x5e => println!("IM 2"),
+	    0x5f => println!("LD A, R"),
+	    0x60 => println!("IN H, [C]"),
+	    0x61 => println!("OUT [C], H"),
+	    0x62 => println!("SBC HL, HL"),
+	    0x63 => println!("LD [${opw:04X}], HL"),
+	    0x64 => println!("NEG"),
+	    0x65 => println!("RETN"),
+	    0x66 => println!("IM 0"),
+	    0x67 => println!("RRD"),
+	    0x68 => println!("IN L, [C]"),
+	    0x69 => println!("OUT [C], L"),
+	    0x6a => println!("ADC HL, HL"),
+	    0x6b => println!("LD HL, [${opw:04X}]"),
+	    0x6c => println!("NEG"),
+	    0x6d => println!("RETN"),
+	    0x6e => println!("IM 0"),
+	    0x6f => println!("RLD"),
+	    0x70 => println!("IN [C]"),
+	    0x71 => println!("OUT [C], 0"),
+	    0x72 => println!("SBC HL, SP"),
+	    0x73 => println!("LD [${opw:04X}], SP"),
+	    0x74 => println!("NEG"),
+	    0x75 => println!("RETN"),
+	    0x76 => println!("IM 1"),
+	    0x77 => println!("NOP"),
+	    0x78 => println!("IN A, [C]"),
+	    0x79 => println!("OUT [C], A"),
+	    0x7a => println!("ADC HL, SP"),
+	    0x7b => println!("LD SP, [${opw:04X}]"),
+	    0x7c => println!("NEG"),
+	    0x7d => println!("RETN"),
+	    0x7e => println!("IM 2"),
+	    0x7f => println!("NOP"),
+	    0xa0 => println!("LDI"),
+	    0xa1 => println!("CPI"),
+	    0xa2 => println!("INI"),
+	    0xa3 => println!("OUTI"),
+	    0xa8 => println!("LDD"),
+	    0xa9 => println!("CPD"),
+	    0xaa => println!("IND"),
+	    0xab => println!("OUTD"),
+	    0xb0 => println!("LDIR"),
+	    0xb1 => println!("CPIR"),
+	    0xb2 => println!("INIR"),
+	    0xb3 => println!("OTIR"),
+	    0xb8 => println!("LDDR"),
+	    0xb9 => println!("CPDR"),
+	    0xba => println!("INDR"),
+	    0xbb => println!("OTDR"),
 	},
 	_ => {},
     };
