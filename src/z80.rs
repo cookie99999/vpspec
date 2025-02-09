@@ -345,10 +345,10 @@ impl Cpu {
     }
 
     fn read_rp(&self, pfx: u16, rp: u8) -> u16 {
-	if pfx == 0xdd || pfx == 0xddcb {
+	if (pfx == 0xdd || pfx == 0xddcb) && rp == 2 {
 	    return self.ix;
 	}
-	if pfx == 0xfd || pfx == 0xfdcb {
+	if (pfx == 0xfd || pfx == 0xfdcb) && rp == 2 {
 	    return self.iy;
 	}
 	
