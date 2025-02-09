@@ -680,8 +680,13 @@ impl Cpu {
 	self.cycles += instr.cycles as usize;
 
 	if self.dbg {
-	    println!("A {:02X} F {:02X} B {:02X} C {:02X} D {:02X} E {:02X} H {:02X} L {:02X} SP {:04X}, CYC: {} iff {}",
-		     self.a, self.f.as_u8(), self.b, self.c, self.d, self.e, self.h, self.l, self.sp, self.cycles, self.iff);
+	    println!("AF {:04X} BC {:04X} DE {:04X} HL {:04X} SP {:04X}, IX {:04X} IY {:04X} IR {:04X} CYC: {} iff {}",
+		     ((self.a as u16) << 8) | self.f.as_u8() as u16,
+		     ((self.b as u16) << 8) | self.c as u16,
+		     ((self.d as u16) << 8) | self.e as u16,
+		     ((self.h as u16) << 8) | self.l as u16,
+		     self.sp, self.ix, self.iy,
+		     ((self.i as u16) << 8) | self.r as u16, self.cycles, self.iff as u8);
 	    disas(self.pc, pfx, instr.opcode, op1, opw);
 	}
 	
