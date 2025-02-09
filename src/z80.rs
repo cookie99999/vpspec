@@ -660,7 +660,6 @@ impl Cpu {
     
     pub fn step(&mut self) -> usize {
 	let oldcycles = self.cycles;
-	self.r = self.r.wrapping_add(1);
 
 	let (pfx, mut opcode, op1, opw, instr, d_bits, d, s, rp, c, hlptr) = self.getops();
 	
@@ -1116,7 +1115,11 @@ impl Cpu {
 	    },
 	    _ => panic!("bad prefix {pfx:04x}"),
 	};
-	    
+
+	self.r = self.r.wrapping_add(1);
+	if self.r > 0x7f {
+	    self.r = 0;
+	}
 	self.cycles - oldcycles
     }
 }
