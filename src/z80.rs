@@ -773,7 +773,10 @@ impl Cpu {
 		    let hltmp = self.read_rp(pfx, 2) as u32;
 		    let rptmp = self.read_rp(pfx, rp) as u32;
 		    let tmp = hltmp + rptmp;
+		    
 		    self.f.set(PSW::C, tmp > 0xffff);
+		    self.f.set(PSW::H, (((tmp >> 8) ^ (hltmp >> 8) ^ (rptmp >> 8)) & (1 << 4)) != 0);
+		    self.f.remove(PSW::N);
 		    self.write_rp(pfx, 2, tmp as u16);
 		},
 		0x80..=0xbf => { //aluops A, r
