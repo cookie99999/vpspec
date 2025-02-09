@@ -894,7 +894,29 @@ impl Cpu {
 		    todo!("djnz and jr");
 		},
 		0xd9 => { //EXX
-		    todo!("exx");
+		    let tmp = self.shadow[0];
+		    self.shadow[0] = self.b;
+		    self.b = tmp;
+
+		    let tmp = self.shadow[1];
+		    self.shadow[1] = self.c;
+		    self.c = tmp;
+
+		    let tmp = self.shadow[2];
+		    self.shadow[2] = self.d;
+		    self.d = tmp;
+
+		    let tmp = self.shadow[3];
+		    self.shadow[3] = self.e;
+		    self.e = tmp;
+
+		    let tmp = self.shadow[4];
+		    self.shadow[4] = self.h;
+		    self.h = tmp;
+
+		    let tmp = self.shadow[5];
+		    self.shadow[5] = self.l;
+		    self.l = tmp;
 		},
 		_ => panic!("Prefix byte somehow got to decode"),
 	    },
