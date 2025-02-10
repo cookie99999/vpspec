@@ -524,6 +524,131 @@ impl Cpu {
 	};
     }
 
+    fn bitop(&mut self, pfx: u16, opcode: u8, s: u8, hlptr: u16) {
+	let op = (opcode >> 6) & 3;
+	let y = (opcode >> 3) & 7;
+	let d = opcode & 7;
+
+	match op {
+	    0 => match y { //shift/rotate
+		0 => { //RLC
+		    let tmp = (s & 0x80) >> 7;
+		    let result = (s << 1) | tmp;
+		    self.movb(pfx, d, result, hlptr);
+		    
+		    self.f.set(PSW::C, tmp != 0);
+		    self.f.set(PSW::S, (result & 0x80) != 0);
+		    self.f.set(PSW::Z, result == 0);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		},
+		1 => { //RRC
+		    let tmp = (s & 1) << 7;
+		    let result = (s >> 1) | tmp;
+		    self.movb(pfx, d, result, hlptr);
+
+		    self.f.set(PSW::C, tmp != 0);
+		    self.f.set(PSW::S, (result & 0x80) != 0);
+		    self.f.set(PSW::Z, result == 0);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		},
+		2 => { //RL
+		    let cy = self.f.contains(PSW::C) as u8;
+		    let b7 = (s & 0x80) >> 7;
+		    let result = (s << 1) | cy;
+		    self.movb(pfx, d, result, hlptr);
+
+		    self.f.set(PSW::C, b7 != 0);
+		    self.f.set(PSW::S, (result & 0x80) != 0);
+		    self.f.set(PSW::Z, result == 0);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		},
+		3 => { //RR
+		    let cy = self.f.contains(PSW::C) as u8;
+		    let b0 = s & 1;
+		    let result = (s >> 1) | (cy << 7);
+		    self.movb(pfx, d, result, hlptr);
+
+		    self.f.set(PSW::C, b0 != 0);
+		    self.f.set(PSW::S, (result & 0x80) != 0);
+		    self.f.set(PSW::Z, result == 0);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		},
+		4 => { //SLA
+		    let b7 = s & 0x80;
+		    let result = s << 1;
+		    self.movb(pfx, d, result, hlptr);
+
+		    self.f.set(PSW::C, b7 != 0);
+		    self.f.set(PSW::S, (result & 0x80) != 0);
+		    self.f.set(PSW::Z, result == 0);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		},
+		5 => { //SRA
+		    let b7 = s & 0x80;
+		    let b0 = s & 1;
+		    let result = (s >> 1) | b7;
+		    self.movb(pfx, d, result, hlptr);
+
+		    self.f.set(PSW::C, b0 != 0);
+		    self.f.set(PSW::S, (result & 0x80) != 0);
+		    self.f.set(PSW::Z, result == 0);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		},
+		6 => { //SLL
+		    let b7 = s & 0x80;
+		    let result = (s << 1) | 1;
+		    self.movb(pfx, d, result, hlptr);
+
+		    self.f.set(PSW::C, b7 != 0);
+		    self.f.set(PSW::S, (result & 0x80) != 0);
+		    self.f.set(PSW::Z, result == 0);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		},
+		_ => { //SRL
+		    let b0 = s & 1;
+		    let result = s >> 1;
+		    self.movb(pfx, d, result, hlptr);
+
+		    self.f.set(PSW::C, b0 != 0);
+		    self.f.set(PSW::S, (result & 0x80) != 0);
+		    self.f.set(PSW::Z, result == 0);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		},
+	    },
+	    1 => { //BIT
+		let tmp = s & (1 << y);
+		
+		self.f.set(PSW::Z, tmp == 0);
+		self.f.insert(PSW::H);
+		self.f.remove(PSW::N);
+	    },
+	    2 => { //RES
+		let tmp = s & !(1 << y);
+		self.movb(pfx, d, tmp, hlptr);
+	    },
+	    _ => { //SET
+		let tmp = s | (1 << y);
+		self.movb(pfx, d, tmp, hlptr);
+	    },
+	};
+    }
+
     fn getops(&mut self) -> (u16, u8, u8, u16, Instruction, u8, u8, u8, u8, u8, u16) {
 	let mut pfx: u16 = 0;
 	let mut i: u16 = 0;
@@ -1142,6 +1267,9 @@ impl Cpu {
 		_ => {
 		    todo!("unimplemented instruction ED {opcode:02X}");
 		},
+	    },
+	    0xcb | 0xddcb | 0xfdcb => {
+		self.bitop(pfx, opcode, s, hlptr);
 	    },
 	    _ => panic!("bad prefix {pfx:04x}"),
 	};
