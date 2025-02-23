@@ -1969,6 +1969,49 @@ fn disas(pc: u16, pfx: u16, opcode: u8, op1: u8, opw: u16) {
 	    0xba => println!("INDR"),
 	    0xbb => println!("OTDR"),
 	},
+	0xcb | 0xddcb | 0xfdcb => {
+	    let x = (opcode >> 6) & 3;
+	    let y = (opcode >> 3) & 7;
+	    let z = opcode & 7;
+	    let r = match z {
+		0 => "B".to_string(),
+		1 => "C".to_string(),
+		2 => "D".to_string(),
+		3 => "E".to_string(),
+		4 => match pfx {
+		    0xddcb => "IXh".to_string(),
+		    0xfdcb => "IYh".to_string(),
+		    _ => "H".to_string(),
+		},
+		5 => match pfx {
+		    0xddcb => "IXl".to_string(),
+		    0xfdcb => "IYl".to_string(),
+		    _ => "L".to_string(),
+		},
+		6 => match pfx {
+		    0xddcb => format!("[IX+{:02X}]", op1 as i8),
+		    0xfdcb => format!("[IY+{:02X}]", op1 as i8),
+		    _ => "[HL]".to_string(),
+		},
+		_ => "A".to_string(),
+	    };
+
+	    match x {
+		0 => match y {
+		    0 => println!("RLC {r}"),
+		    1 => println!("RRC {r}"),
+		    2 => println!("RL {r}"),
+		    3 => println!("RR {r}"),
+		    4 => println!("SLA {r}"),
+		    5 => println!("SRA {r}"),
+		    6 => println!("SLL {r}"),
+		    _ => println!("SRL {r}"),
+		},
+		1 => println!("BIT {y}, {r}"),
+		2 => println!("RES {y}, {r}"),
+		_ => println!("SET {y}, {r}"),
+	    };
+	},
 	_ => {},
     };
 }
