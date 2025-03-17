@@ -266,7 +266,7 @@ const FDCB_SET: [Instruction; 256] = instr_set![
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
-    struct PSW: u8 {
+    pub struct PSW: u8 {
 	const S = 0b10000000;
 	const Z = 0b01000000;
 	const F5 = 0b00100000;
@@ -285,24 +285,24 @@ impl PSW {
 }
 
 pub struct Cpu {
-    a: u8,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    h: u8,
-    l: u8,
-    shadow: [u8; 8],
-    ix: u16,
-    iy: u16,
-    sp: u16,
+    pub a: u8,
+    pub b: u8,
+    pub c: u8,
+    pub d: u8,
+    pub e: u8,
+    pub h: u8,
+    pub l: u8,
+    pub shadow: [u8; 8],
+    pub ix: u16,
+    pub iy: u16,
+    pub sp: u16,
     pub pc: u16,
-    f: PSW,
+    pub f: PSW,
     pub iff: bool,
-    iff2: bool,
-    im: u8,
-    i: u8,
-    r: u8,
+    pub iff2: bool,
+    pub im: u8,
+    pub i: u8,
+    pub r: u8,
     pub bus: bus::CpmBus,
     pub cycles: usize,
     ei_pend: bool,
@@ -344,7 +344,7 @@ impl Cpu {
 	self.i = 0;
     }
 
-    fn read_rp(&self, pfx: u16, rp: u8) -> u16 {
+    pub fn read_rp(&self, pfx: u16, rp: u8) -> u16 {
 	if (pfx == 0xdd || pfx == 0xddcb) && rp == 2 {
 	    return self.ix;
 	}
@@ -1092,8 +1092,7 @@ impl Cpu {
 		    self.f.set(PSW::C, msb <= 0xff);
 		    self.f.insert(PSW::N);
 		    self.f.set(PSW::H, ((msb ^ (hl >> 8) ^ ((!(s >> 8)) & 0xff)) & (1 << 4)) == 0);
-		    self.f.set(PSW::P, ((msb ^ (hl >> 8) ^ ((!(s >> 8)) & 0xff)) & (1 << 7)) !=
-			       ((msb ^ (hl >> 8) ^ ((!(s >> 8)) & 0xff)) & (1 << 8)));
+		    self.f.set(PSW::P, ((hl ^ s) & 0x8000) != 0 && ((msb ^ s ^ s) & 0x8000) != 0);
 		    self.f.set(PSW::S, (msb & 0x80) != 0);
 		    
 		    let tmp = (msb << 8) | (lsb & 0xff);
@@ -1278,6 +1277,7 @@ impl Cpu {
 	if self.r > 0x7f {
 	    self.r = 0;
 	}
+
 	self.cycles - oldcycles
     }
 }
