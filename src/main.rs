@@ -16,7 +16,7 @@ use sdl2::mixer::{InitFlag, AUDIO_S16LSB, DEFAULT_CHANNELS};
 use serde::{Deserialize, Serialize};
 use serde_json::{Result, Value};
 
-#[derive(Serialize, Deserialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 struct State {
     pub pc: u16,
     pub sp: u16,
@@ -93,6 +93,8 @@ fn main() {
 	let tests: Vec<Test> = serde_json::from_reader(reader).unwrap();
 	for test in tests {
 	    //load initial state
+	    cpu.pc = test.initial.pc;
+	    cpu.sp = test.initial.sp;
 	    cpu.a = test.initial.a;
 	    cpu.b = test.initial.b;
 	    cpu.c = test.initial.c;
@@ -124,6 +126,8 @@ fn main() {
 
 	    //extract state to compare
 	    let mut after: State = State::new();
+	    after.pc = cpu.pc;
+	    after.sp = cpu.sp;
 	    after.a = cpu.a;
 	    after.b = cpu.b;
 	    after.c = cpu.c;
@@ -148,6 +152,8 @@ fn main() {
 	    }
 
 	    if after != test.r#final {
+		println!("{:?}", after);
+		println!("{:?}", test.r#final);
 		panic!("failed {}", test.name);
 	    }
 	}

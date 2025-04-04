@@ -269,9 +269,9 @@ bitflags::bitflags! {
     pub struct PSW: u8 {
 	const S = 0b10000000;
 	const Z = 0b01000000;
-	const F5 = 0b00100000;
+	const Y = 0b00100000;
 	const H = 0b00010000;
-	const F3 = 0b00001000;
+	const X = 0b00001000;
 	const P = 0b00000100;
 	const N = 0b00000010;
 	const C = 0b00000001;
@@ -907,6 +907,8 @@ impl Cpu {
 		    self.f.set(PSW::C, tmp > 0xffff);
 		    self.f.set(PSW::H, (((tmp >> 8) ^ (hltmp >> 8) ^ (rptmp >> 8)) & (1 << 4)) != 0);
 		    self.f.remove(PSW::N);
+		    self.f.set(PSW::X, (tmp & 0x0800) != 0);
+		    self.f.set(PSW::Y, (tmp & 0x2000) != 0);
 		    self.write_rp(pfx, 2, tmp as u16);
 		},
 		0x80..=0xbf => { //aluops A, r
@@ -924,10 +926,13 @@ impl Cpu {
 		    if d_bits == 6 {
 			tmp = self.bus.read_byte(hlptr).wrapping_add(1) as u16;
 		    }
+		    self.f.remove(PSW::N);
 		    self.f.set(PSW::Z, tmp == 0);
 		    self.f.set(PSW::S, (tmp & 0x80) != 0);
-		    self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::P, ((d & 0x80) == (1 & 0x80)) && ((tmp & 0x80) != ((d as u16) & 0x80)));
 		    self.f.set(PSW::H, ((d & 0x0f).wrapping_add(1)) > 0x0f);
+		    self.f.set(PSW::X, (tmp & 0x08) != 0);
+		    self.f.set(PSW::Y, (tmp & 0x20) != 0);
 		    let tmp = tmp as u8;
 		    self.movb(pfx, d_bits, tmp, hlptr);
 		},
@@ -937,10 +942,13 @@ impl Cpu {
 		    if d_bits == 6 {
 			tmp = self.bus.read_byte(hlptr).wrapping_sub(1) as u16;
 		    }
+		    self.f.insert(PSW::N);
 		    self.f.set(PSW::Z, tmp == 0);
 		    self.f.set(PSW::S, (tmp & 0x80) != 0);
-		    self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
-		    self.f.set(PSW::H, (d & 0x0f) != 0);
+		    self.f.set(PSW::P, ((d & 0x80) != (1 & 0x80)) && ((tmp & 0x80) != ((d as u16) & 0x80)));
+		    self.f.set(PSW::H, ((d & 0x0f) < (1 & 0x0f) + 0));
+		    self.f.set(PSW::X, (tmp & 0x08) != 0);
+		    self.f.set(PSW::Y, (tmp & 0x20) != 0);
 		    let tmp = tmp as u8;
 		    self.movb(pfx, d_bits, tmp, hlptr);
 		},
@@ -948,6 +956,10 @@ impl Cpu {
 		    self.f.set(PSW::C, ((self.a & 0x80) >> 7) != 0);
 		    self.a = self.a << 1;
 		    self.a = self.a | (self.f.contains(PSW::C) as u8);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
 		},
 		0x17 => { //RLA
 		    let tmp = self.f.contains(PSW::C) as u8;
@@ -981,6 +993,10 @@ impl Cpu {
 		0x0f => { //RRCA
 		    self.f.set(PSW::C, (self.a & 1) != 0);
 		    self.a = ((self.a & 1) << 7) | (self.a >> 1);
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
 		},
 		0x1f => { //RRA
 		    let tmp = (self.f.contains(PSW::C) as u8) << 7;
@@ -1019,8 +1035,9 @@ impl Cpu {
 		    let tmp = self.shadow;
 		    self.shadow[6] = self.a;
 		    self.shadow[7] = self.f.as_u8();
-		    self.a = tmp[0];
-		    self.f = PSW::from_bits(tmp[1]).unwrap();
+		    self.a = tmp[6];
+		    self.f = PSW::from_bits(tmp[7]).unwrap();
+		},
 		},
 		0x10 | 0x20 | 0x30 |
 		0x18 | 0x28 | 0x38 => { //DJNZ + JR
