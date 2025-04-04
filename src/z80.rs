@@ -1038,10 +1038,18 @@ impl Cpu {
 		    self.a = tmp[6];
 		    self.f = PSW::from_bits(tmp[7]).unwrap();
 		},
+		0x10 => { //DJNZ
+		    self.b = self.b.wrapping_sub(1);
+		    if self.b != 0 {
+			self.pc = (self.pc.wrapping_add_signed((op1 as i8) as i16)) as u16;
+		    } else {
+			//nothing
+			;
+		    }
 		},
-		0x10 | 0x20 | 0x30 |
-		0x18 | 0x28 | 0x38 => { //DJNZ + JR
-		    todo!("djnz and jr");
+		0x20 | 0x30 |
+		0x18 | 0x28 | 0x38 => { //JR
+		    todo!("jr");
 		},
 		0xd9 => { //EXX
 		    let tmp = self.shadow[0];
