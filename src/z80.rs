@@ -1042,14 +1042,31 @@ impl Cpu {
 		    self.b = self.b.wrapping_sub(1);
 		    if self.b != 0 {
 			self.pc = (self.pc.wrapping_add_signed((op1 as i8) as i16)) as u16;
-		    } else {
-			//nothing
-			;
-		    }
+		    } //else nothing
 		},
 		0x20 | 0x30 |
 		0x18 | 0x28 | 0x38 => { //JR
-		    todo!("jr");
+		    let c2 = if opcode == 0x18 {
+			8 //unconditional
+		    } else {
+			c - 4
+		    };
+		    
+		    let cond: bool = match c2 {
+			0 => !self.f.contains(PSW::Z),
+			1 => self.f.contains(PSW::Z),
+			2 => !self.f.contains(PSW::C),
+			3 => self.f.contains(PSW::C),
+			4 => !self.f.contains(PSW::P),
+			5 => self.f.contains(PSW::P),
+			6 => !self.f.contains(PSW::S),
+			7 => self.f.contains(PSW::S),
+			_ => true,
+		    };
+
+		    if cond {
+			self.pc = (self.pc.wrapping_add_signed((op1 as i8) as i16)) as u16;
+		    }
 		},
 		0xd9 => { //EXX
 		    let tmp = self.shadow[0];
