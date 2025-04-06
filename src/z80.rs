@@ -966,26 +966,37 @@ impl Cpu {
 		    self.f.set(PSW::C, ((self.a & 0x80) >> 7) != 0);
 		    self.a = self.a << 1;
 		    self.a = self.a | tmp;
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
 		},
 		0x27 => { //DAA
 		    let mut tmp = self.a as u16;
+		    let mut adjust = 0;
 		    if ((tmp & 0x0f) > 0x09) || self.f.contains(PSW::H) {
-			self.f.set(PSW::H, (((tmp & 0x0f) + 0x06) & 0xf0) != 0);
-			tmp += 6;
-			if (tmp & 0xff00) != 0 {
-			    self.f.insert(PSW::C);
-			}
+			adjust += 6;
 		    }
-		    if ((tmp & 0xf0) > 0x90) || self.f.contains(PSW::C) {
-			tmp += 0x60;
-			if (tmp & 0xff00) != 0 {
-			    self.f.insert(PSW::C);
-			}
+		    
+		    if (tmp > 0x99) || self.f.contains(PSW::C) {
+			adjust += 0x60;
+			self.f.insert(PSW::C);
 		    }
-		    self.f.set(PSW::Z, (tmp & 0xff) == 0);
-		    self.f.set(PSW::S, (tmp & 0x80) != 0);
-		    self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
+
+		    if self.f.contains(PSW::N) {
+			self.f.set(PSW::H, self.f.contains(PSW::H) && (tmp & 0x0f) < 0x06);
+			tmp = tmp.wrapping_sub(adjust);
+		    } else {
+			self.f.set(PSW::H, (tmp & 0x0f) > 0x09);
+			tmp = tmp.wrapping_add(adjust);
+		    }
+		    
 		    self.a = tmp as u8;
+		    self.f.set(PSW::Z, self.a == 0);
+		    self.f.set(PSW::S, (self.a & 0x80) != 0);
+		    self.f.set(PSW::P, (self.a.count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
 		},
 		0x37 => { //SCF
 		    self.f.insert(PSW::C);
@@ -1003,6 +1014,10 @@ impl Cpu {
 		    self.f.set(PSW::C, (self.a & 1) != 0);
 		    self.a = self.a >> 1;
 		    self.a = self.a | tmp;
+		    self.f.remove(PSW::N);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
 		},
 		0x2f => { //CPL
 		    self.a = !self.a;
