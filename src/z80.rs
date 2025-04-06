@@ -823,6 +823,10 @@ impl Cpu {
 		    //nothing
 		},
 		0x76 => { //HLT
+		    self.r = self.r.wrapping_add(1);
+		    if self.r > 0x7f {
+			self.r = 0;
+		    }
 		    return 0; //todo proper behavior
 		},
 		0x40..=0x7f => { //LD r1, r2
@@ -1000,6 +1004,10 @@ impl Cpu {
 		},
 		0x37 => { //SCF
 		    self.f.insert(PSW::C);
+		    self.f.remove(PSW::H);
+		    self.f.remove(PSW::N);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
 		},
 		0x0f => { //RRCA
 		    self.f.set(PSW::C, (self.a & 1) != 0);
@@ -1021,9 +1029,17 @@ impl Cpu {
 		},
 		0x2f => { //CPL
 		    self.a = !self.a;
+		    self.f.insert(PSW::H);
+		    self.f.insert(PSW::N);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
 		},
 		0x3f => { //CCF
+		    self.f.set(PSW::H, self.f.contains(PSW::C));
 		    self.f.toggle(PSW::C);
+		    self.f.remove(PSW::N);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
 		},
 		0xe9 => { //JP (HL)
 		    self.pc = hlptr;
