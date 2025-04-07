@@ -694,8 +694,13 @@ impl Cpu {
 		self.f.set(PSW::S, y == 7 && ((tmp & 0x80) !=0));
 		self.f.insert(PSW::H);
 		self.f.remove(PSW::N);
-		self.f.set(PSW::X, (s & 0x08) != 0);
-		self.f.set(PSW::Y, (s & 0x20) != 0);
+		if d == 6 {
+		    self.f.set(PSW::X, ((self.wz >> 8) & 0x08) != 0);
+		    self.f.set(PSW::Y, ((self.wz >> 8) & 0x20) != 0);
+		} else {
+		    self.f.set(PSW::X, (s & 0x08) != 0);
+		    self.f.set(PSW::Y, (s & 0x20) != 0);
+		}
 	    },
 	    2 => { //RES
 		let tmp = s & !(1 << y);
