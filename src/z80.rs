@@ -434,46 +434,77 @@ impl Cpu {
 		tmp = tmp.wrapping_add(s as u16);
 		self.f.set(PSW::H, ((self.a & 0xf) + (s & 0xf)) > 0x0f);
 		self.f.set(PSW::C, tmp > 0xff);
+		self.f.set(PSW::P, ((self.a & 0x80) == (s & 0x80)) && ((tmp & 0x80) != ((self.a as u16) & 0x80)));
+		self.f.remove(PSW::N);
+		self.f.set(PSW::X, (tmp & 0x08) != 0);
+		self.f.set(PSW::Y, (tmp & 0x20) != 0);
 	    },
 	    1 => { //ADC
 		tmp = tmp.wrapping_add(s as u16).wrapping_add(cflag);
 		self.f.set(PSW::H, ((self.a & 0xf) + (s & 0xf) + cflag as u8) > 0x0f);
 		self.f.set(PSW::C, tmp > 0xff);
+		self.f.set(PSW::P, ((self.a & 0x80) == (s & 0x80)) && ((tmp & 0x80) != ((self.a as u16) & 0x80)));
+		self.f.remove(PSW::N);
+		self.f.set(PSW::X, (tmp & 0x08) != 0);
+		self.f.set(PSW::Y, (tmp & 0x20) != 0);
 	    },
 	    2 => { //SUB
 		tmp = tmp.wrapping_sub(s as u16);
-		self.f.set(PSW::H, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + 1) > 0x0f);
+		self.f.set(PSW::H, ((self.a & 0x0f) as i8) - ((tmp & 0x0f) as i8) < 0);
 		self.f.set(PSW::C, tmp > 0xff);
+		self.f.set(PSW::P, ((self.a & 0x80) != (s & 0x80)) && ((tmp & 0x80) != ((self.a as u16) & 0x80)));
+		self.f.insert(PSW::N);
+		self.f.set(PSW::X, (tmp & 0x08) != 0);
+		self.f.set(PSW::Y, (tmp & 0x20) != 0);
 	    },
-	    3 => { //SBB
+	    3 => { //SBC
 		tmp = tmp.wrapping_sub(s as u16).wrapping_sub(cflag);
-		self.f.set(PSW::H, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + ((!cflag as u8) & 1)) > 0x0f);
+		self.f.set(PSW::H, ((self.a & 0x0f) as i8) - ((tmp & 0x0f) as i8) - (cflag as i8) < 0);
 		self.f.set(PSW::C, tmp > 0xff);
+		self.f.set(PSW::P, ((self.a & 0x80) != (s & 0x80)) && ((tmp & 0x80) != ((self.a as u16) & 0x80)));
+		self.f.insert(PSW::N);
+		self.f.set(PSW::X, (tmp & 0x08) != 0);
+		self.f.set(PSW::Y, (tmp & 0x20) != 0);
 	    },
-	    4 => { //ANA
+	    4 => { //AND
 		tmp = (self.a & s) as u16;
-		self.f.set(PSW::C, false);
-		self.f.set(PSW::H, ((self.a | s) & 0x08) != 0);
+		self.f.remove(PSW::C);
+		self.f.remove(PSW::N);
+		self.f.insert(PSW::H);
+		self.f.set(PSW::X, (tmp & 0x08) != 0);
+		self.f.set(PSW::Y, (tmp & 0x20) != 0);
+		self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
 	    },
-	    5 => { //XRA
+	    5 => { //XOR
 		tmp = (self.a ^ s) as u16;
-		self.f.set(PSW::C, false);
-		self.f.set(PSW::H, false);
+		self.f.remove(PSW::C);
+		self.f.remove(PSW::N);
+		self.f.remove(PSW::H);
+		self.f.set(PSW::X, (tmp & 0x08) != 0);
+		self.f.set(PSW::Y, (tmp & 0x20) != 0);
+		self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
 	    },
-	    6 => { //ORA
+	    6 => { //OR
 		tmp = (self.a | s) as u16;
-		self.f.set(PSW::C, false);
-		self.f.set(PSW::H, false);
+		self.f.remove(PSW::C);
+		self.f.remove(PSW::N);
+		self.f.remove(PSW::H);
+		self.f.set(PSW::X, (tmp & 0x08) != 0);
+		self.f.set(PSW::Y, (tmp & 0x20) != 0);
+		self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
 	    },
-	    _ => { //CMP
+	    _ => { //CP
 		tmp = tmp.wrapping_sub(s as u16);
-		self.f.set(PSW::H, ((self.a & 0xf) + ((!s & 0xff) & 0xf) + 1) > 0x0f);
+		self.f.set(PSW::H, ((self.a & 0x0f) as i8) - ((tmp & 0x0f) as i8) < 0);
 		self.f.set(PSW::C, tmp > 0xff);
+		self.f.set(PSW::P, ((self.a & 0x80) != (s & 0x80)) && ((tmp & 0x80) != ((self.a as u16) & 0x80)));
+		self.f.insert(PSW::N);
+		self.f.set(PSW::X, (s & 0x08) != 0);
+		self.f.set(PSW::Y, (s & 0x20) != 0);
 	    },
 	};
 	self.f.set(PSW::Z, (tmp & 0xff) == 0);
 	self.f.set(PSW::S, (tmp & 0x80) != 0);
-	self.f.set(PSW::P, (((tmp & 0xff) as u8).count_ones() % 2) == 0);
 	if op != 7 { //CMP doesn't modify a
 	    self.a = tmp as u8;
 	}
