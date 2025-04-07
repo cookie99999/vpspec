@@ -581,6 +581,8 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.remove(PSW::H);
 		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (result & 0x08) != 0);
+		    self.f.set(PSW::Y, (result & 0x20) != 0);
 		},
 		1 => { //RRC
 		    let tmp = (s & 1) << 7;
@@ -593,6 +595,8 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.remove(PSW::H);
 		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (result & 0x08) != 0);
+		    self.f.set(PSW::Y, (result & 0x20) != 0);
 		},
 		2 => { //RL
 		    let cy = self.f.contains(PSW::C) as u8;
@@ -606,6 +610,8 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.remove(PSW::H);
 		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (result & 0x08) != 0);
+		    self.f.set(PSW::Y, (result & 0x20) != 0);
 		},
 		3 => { //RR
 		    let cy = self.f.contains(PSW::C) as u8;
@@ -619,6 +625,8 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.remove(PSW::H);
 		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (result & 0x08) != 0);
+		    self.f.set(PSW::Y, (result & 0x20) != 0);
 		},
 		4 => { //SLA
 		    let b7 = s & 0x80;
@@ -631,6 +639,8 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.remove(PSW::H);
 		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (result & 0x08) != 0);
+		    self.f.set(PSW::Y, (result & 0x20) != 0);
 		},
 		5 => { //SRA
 		    let b7 = s & 0x80;
@@ -644,6 +654,8 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.remove(PSW::H);
 		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (result & 0x08) != 0);
+		    self.f.set(PSW::Y, (result & 0x20) != 0);
 		},
 		6 => { //SLL
 		    let b7 = s & 0x80;
@@ -656,6 +668,8 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.remove(PSW::H);
 		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (result & 0x08) != 0);
+		    self.f.set(PSW::Y, (result & 0x20) != 0);
 		},
 		_ => { //SRL
 		    let b0 = s & 1;
@@ -668,14 +682,20 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.remove(PSW::H);
 		    self.f.set(PSW::P, (((result & 0xff) as u8).count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (result & 0x08) != 0);
+		    self.f.set(PSW::Y, (result & 0x20) != 0);
 		},
 	    },
 	    1 => { //BIT
 		let tmp = s & (1 << y);
 		
 		self.f.set(PSW::Z, tmp == 0);
+		self.f.set(PSW::P, self.f.contains(PSW::Z));
+		self.f.set(PSW::S, y == 7 && ((tmp & 0x80) !=0));
 		self.f.insert(PSW::H);
 		self.f.remove(PSW::N);
+		self.f.set(PSW::X, (s & 0x08) != 0);
+		self.f.set(PSW::Y, (s & 0x20) != 0);
 	    },
 	    2 => { //RES
 		let tmp = s & !(1 << y);
