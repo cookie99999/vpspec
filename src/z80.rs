@@ -307,6 +307,8 @@ pub struct Cpu {
     pub cycles: usize,
     ei_pend: bool,
     dbg: bool,
+    pub q: u8,
+    pub wz: u16,
 }
 
 impl Cpu {
@@ -334,6 +336,8 @@ impl Cpu {
 	    cycles: 0,
 	    ei_pend: false,
 	    dbg: dbg,
+	    q: 0,
+	    wz: 0,
 	}
     }
 
@@ -531,15 +535,17 @@ impl Cpu {
 	    0 => { //RET
 		if cond {
 		    self.pc = self.pop_word();
+		    self.wz = self.pc;
 		    if c2 != 8 {
 			self.cycles += 6;
 		    }
 		}
 	    },
-	    1 => { //JMP
+	    1 => { //JP
 		if cond {
 		    self.pc = addr;
 		}
+		self.wz = addr;
 	    },
 	    2 => { //CALL
 		if cond {
@@ -547,10 +553,12 @@ impl Cpu {
 		    self.pc = addr;
 		    self.cycles += 6;
 		}
+		self.wz = addr;
 	    },
 	    _ => { //RST
 		self.push_word(self.pc);
 		self.pc = (c << 3) as u16;
+		self.wz = self.pc;
 	    },
 	};
     }
@@ -689,6 +697,10 @@ impl Cpu {
 	    match opcode {
 		0xcb => {
 		    pfx = if pfx == 0 || pfx == 0xdd || pfx == 0xfd {
+			self.r = self.r.wrapping_add(1);
+			if self.r > 0x7f {
+			    self.r = 0;
+			}
 			(pfx << 8) | 0xcb
 		    } else {
 			break 'fetch;
@@ -696,6 +708,10 @@ impl Cpu {
 		},
 		0xed => {
 		    pfx = if pfx == 0 || pfx == 0xdd || pfx == 0xfd {
+			self.r = self.r.wrapping_add(1);
+			if self.r > 0x7f {
+			    self.r = 0;
+			}
 			0xed
 		    } else {
 			break 'fetch;
@@ -703,6 +719,10 @@ impl Cpu {
 		},
 		0xdd => {
 		    pfx = if pfx != 0xcb && pfx != 0xed {
+			self.r = self.r.wrapping_add(1);
+			if self.r > 0x7f {
+			    self.r = 0;
+			}
 			0xdd
 		    } else {
 			break 'fetch;
@@ -710,6 +730,10 @@ impl Cpu {
 		},
 		0xfd => {
 		    pfx = if pfx != 0xcb && pfx != 0xed {
+			self.r = self.r.wrapping_add(1);
+			if self.r > 0x7f {
+			    self.r = 0;
+			}
 			0xfd
 		    } else {
 			break 'fetch;
@@ -741,7 +765,7 @@ impl Cpu {
 	let n = d_bits;
 	let hlptr = match pfx {
 	    0xdd | 0xddcb => {
-		((self.ix as i16) + op1 as i16) as u16
+		self.ix.wrapping_add_signed((op1 as i8) as i16)
 	    },
 	    0xfd | 0xfdcb => {
 		((self.iy as i16) + op1 as i16) as u16
@@ -757,10 +781,18 @@ impl Cpu {
 	    0b100 => {
 		match pfx {
 		    0xdd | 0xddcb => {
-			(self.ix >> 8) as u8
+			if opcode == 0x74 || opcode == 0x75 {
+			    self.h //special ld (ix+n), h/l case
+			} else {
+			    (self.ix >> 8) as u8
+			}
 		    },
 		    0xfd | 0xfdcb => {
-			(self.iy >> 8) as u8
+			if opcode == 0x74 || opcode == 0x75 {
+			    self.h
+			} else {
+			    (self.iy >> 8) as u8
+			}
 		    },
 		    _ => self.h,
 		}
@@ -768,10 +800,18 @@ impl Cpu {
 	    0b101 => {
 		match pfx {
 		    0xdd | 0xddcb => {
-			(self.ix & 0x00ff) as u8
+			if opcode == 0x74 || opcode == 0x75 {
+			    self.l
+			} else {
+			    (self.ix & 0x00ff) as u8
+			}
 		    },
 		    0xfd | 0xfdcb => {
-			(self.iy & 0x00ff) as u8
+			if opcode == 0x74 || opcode == 0x75 {
+			    self.l
+			} else {
+			    (self.iy & 0x00ff) as u8
+			}
 		    },
 		    _ => self.l,
 		}
@@ -848,6 +888,31 @@ impl Cpu {
 	
 	self.pc = self.pc.wrapping_add(instr.bytes as u16);
 
+	//adjust wz for ix/iy+n operations (annoying and stupid)
+	if pfx == 0xdd || pfx == 0xfd {
+	    let x = opcode >> 6;
+	    let y = (opcode >> 3) & 7;
+	    let z = opcode & 7; //doing it octal-wise is much cleaner
+
+	    match x {
+		0 => match opcode {
+		    0x34 | 0x35 | 0x36 => self.wz = hlptr,
+		    _ => {},
+		},
+		1 => if opcode != 0x76 {
+		    if y == 6 {
+			self.wz = hlptr;
+		    } else if z == 6 || opcode == 0x77 {
+			self.wz = hlptr;
+		    }
+		},
+		2 => if z == 6 {
+		    self.wz = hlptr;
+		},
+		_ => {},
+	    }
+	}
+
 	match pfx {
 	    0x00 | 0xdd | 0xfd => match opcode {
 		0x00 => { //NOP
@@ -858,14 +923,24 @@ impl Cpu {
 		    if self.r > 0x7f {
 			self.r = 0;
 		    }
+		    self.q = 0;
 		    return 0; //todo proper behavior
 		},
 		0x40..=0x7f => { //LD r1, r2
-		    self.movb(pfx, d_bits, s, hlptr);
+		    if (pfx == 0xdd || pfx == 0xfd) && (opcode == 0x66 || opcode == 0x6e) {
+			self.movb(0x00, d_bits, s, hlptr); //hack to handle ld h, (ix+n) case
+		    } else {
+			self.movb(pfx, d_bits, s, hlptr);
+		    }
 		},
 		0x06 | 0x16 | 0x26 | 0x36 |
 		0x0e | 0x1e | 0x2e | 0x3e => { //LD r, n
-		    self.movb(pfx, d_bits, op1, hlptr);
+		    let op2 = ((opw & 0xff00) >> 8) as u8;
+		    if (pfx == 0xdd || pfx == 0xfd) && opcode == 0x36 {
+			self.movb(pfx, d_bits, op2, hlptr); //extra displacement byte in ix/iy versions
+		    } else {
+			self.movb(pfx, d_bits, op1, hlptr);
+		    }
 		},
 		0x01 | 0x11 | 0x21 | 0x31 => { //LD rp, nn
 		    self.write_rp(pfx, rp, opw);
@@ -873,24 +948,30 @@ impl Cpu {
 		0x02 | 0x12 => { //LD (rp), A
 		    let tmp = self.read_rp(pfx, rp);
 		    self.bus.write_byte(tmp, self.a);
+		    self.wz = ((self.a as u16) << 8) | ((tmp.wrapping_add(1)) & 0xff);
 		},
 		0x0a | 0x1a => { //LD A, (rp)
 		    let tmp = self.read_rp(pfx, rp);
 		    self.a = self.bus.read_byte(tmp);
+		    self.wz = tmp.wrapping_add(1);
 		},
 		0x22 => { //LD (nn), HL
 		    let tmp = self.read_rp(pfx, 2);
 		    self.bus.write_word(opw, tmp);
+		    self.wz = opw.wrapping_add(1);
 		},
 		0x2a => { //LD HL, (nn)
 		    let tmp = self.bus.read_word(opw);
 		    self.write_rp(pfx, 2, tmp);
+		    self.wz = opw.wrapping_add(1);
 		},
 		0x32 => { //LD (nn), A
 		    self.bus.write_byte(opw, self.a);
+		    self.wz = ((self.a as u16) << 8) | ((opw.wrapping_add(1)) & 0xff);
 		},
 		0x3a => { //LD A, (nn)
 		    self.a = self.bus.read_byte(opw);
+		    self.wz = opw.wrapping_add(1);
 		},
 		0xc5 | 0xd5 | 0xe5 | 0xf5 => { //PUSH
 		    let mut tmp = self.read_rp(pfx, rp);
@@ -914,6 +995,7 @@ impl Cpu {
 		    let hl = self.read_rp(pfx, 2);
 		    self.push_word(hl);
 		    self.write_rp(pfx, 2, tmp);
+		    self.wz = self.read_rp(pfx, 2);
 		},
 		0xf9 => { //LD SP, HL
 		    self.sp = self.read_rp(pfx, 2);
@@ -945,6 +1027,7 @@ impl Cpu {
 		    self.f.set(PSW::X, (tmp & 0x0800) != 0);
 		    self.f.set(PSW::Y, (tmp & 0x2000) != 0);
 		    self.write_rp(pfx, 2, tmp as u16);
+		    self.wz = (hltmp as u16).wrapping_add(1);
 		},
 		0x80..=0xbf => { //aluops A, r
 		    let op_bits: u8 = (opcode & 0x38) >> 3;
@@ -1037,8 +1120,13 @@ impl Cpu {
 		    self.f.insert(PSW::C);
 		    self.f.remove(PSW::H);
 		    self.f.remove(PSW::N);
-		    self.f.set(PSW::X, (self.a & 0x08) != 0);
-		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
+		    if self.q != 0 {
+			self.f.set(PSW::X, (self.a & 0x08) != 0);
+			self.f.set(PSW::Y, (self.a & 0x20) != 0);
+		    } else {
+			self.f.set(PSW::X, (self.a & 0x08) != 0 || self.f.contains(PSW::X));
+			self.f.set(PSW::Y, (self.a & 0x20) != 0 || self.f.contains(PSW::Y));
+		    }
 		},
 		0x0f => { //RRCA
 		    self.f.set(PSW::C, (self.a & 1) != 0);
@@ -1069,8 +1157,13 @@ impl Cpu {
 		    self.f.set(PSW::H, self.f.contains(PSW::C));
 		    self.f.toggle(PSW::C);
 		    self.f.remove(PSW::N);
-		    self.f.set(PSW::X, (self.a & 0x08) != 0);
-		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
+		    if self.q != 0 {
+			self.f.set(PSW::X, (self.a & 0x08) != 0);
+			self.f.set(PSW::Y, (self.a & 0x20) != 0);
+		    } else {
+			self.f.set(PSW::X, (self.a & 0x08) != 0 || self.f.contains(PSW::X));
+			self.f.set(PSW::Y, (self.a & 0x20) != 0 || self.f.contains(PSW::Y));
+		    }
 		},
 		0xe9 => { //JP (HL)
 		    self.pc = hlptr;
@@ -1083,8 +1176,10 @@ impl Cpu {
 		},
 		0xd3 => { //OUT (n), A
 		    self.bus.write_io_byte(op1 as u16, self.a);
+		    self.wz = ((self.a as u16) << 8) | (op1 as u16).wrapping_add(1) & 0xff;
 		},
 		0xdb => { //IN A, (n)
+		    self.wz = ((self.a as u16) << 8) + (op1 as u16) + 1;
 		    self.a = self.bus.read_io_byte(op1 as u16);
 		},
 		0xf3 => { //DI
@@ -1101,13 +1196,17 @@ impl Cpu {
 		    self.f = PSW::from_bits(tmp[7]).unwrap();
 		},
 		0x10 => { //DJNZ
+		    let addr = self.pc.wrapping_add_signed((op1 as i8) as i16);
 		    self.b = self.b.wrapping_sub(1);
 		    if self.b != 0 {
-			self.pc = (self.pc.wrapping_add_signed((op1 as i8) as i16)) as u16;
-		    } //else nothing
+			self.pc = addr;
+			self.wz = addr;
+		    } // else nothing
+		    
 		},
 		0x20 | 0x30 |
 		0x18 | 0x28 | 0x38 => { //JR
+		    let addr = self.pc.wrapping_add_signed((op1 as i8) as i16);
 		    let c2 = if opcode == 0x18 {
 			8 //unconditional
 		    } else {
@@ -1127,7 +1226,8 @@ impl Cpu {
 		    };
 
 		    if cond {
-			self.pc = (self.pc.wrapping_add_signed((op1 as i8) as i16)) as u16;
+			self.pc = addr;
+			self.wz = addr;
 		    }
 		},
 		0xd9 => { //EXX
@@ -1173,6 +1273,7 @@ impl Cpu {
 			6 => {},
 			_ => self.a = tmp,
 		    };
+		    self.wz = bctmp.wrapping_add(1);
 		},
 		0x41 | 0x51 | 0x61 |
 		0x49 | 0x59 | 0x69 | 0x79 => { //16 bit OUT
@@ -1183,6 +1284,7 @@ impl Cpu {
 		    } else {
 			self.bus.write_io_byte(bctmp, 0);
 		    }
+		    self.wz = bctmp.wrapping_add(1);
 		},
 		0x42 | 0x52 | 0x62 | 0x72 => { //SBC HL, rp
 		    let hl = self.read_rp(pfx, 2);
@@ -1202,6 +1304,7 @@ impl Cpu {
 		    let tmp = (msb << 8) | (lsb & 0xff);
 		    self.f.set(PSW::Z, tmp == 0);
 		    self.write_rp(pfx, 2, tmp as u16);
+		    self.wz = hl.wrapping_add(1);
 		},
 		0x4a | 0x5a | 0x6a | 0x7a => { //ADC HL, rp
 		    let hl = self.read_rp(pfx, 2);
@@ -1222,14 +1325,17 @@ impl Cpu {
 		    let tmp = (msb << 8) | (lsb & 0xff);
 		    self.f.set(PSW::Z, tmp == 0);
 		    self.write_rp(pfx, 2, tmp);
+		    self.wz = hl.wrapping_add(1);
 		},
 		0x43 | 0x53 | 0x63 | 0x73 => { //LD (nn), rp
 		    let tmp = self.read_rp(pfx, rp);
 		    self.bus.write_word(opw, tmp);
+		    self.wz = tmp.wrapping_add(1);
 		},
 		0x4b | 0x5b | 0x6b | 0x7b => { //LD rp, (nn)
 		    let tmp = self.bus.read_word(opw);
 		    self.write_rp(pfx, rp, tmp);
+		    self.wz = tmp.wrapping_add(1);
 		},
 		0x46 | 0x56 | 0x5e => { //IM y
 		    self.im = d;
@@ -1255,6 +1361,7 @@ impl Cpu {
 		},
 		0x4d => { //RETI
 		    self.pc = self.pop_word();
+		    self.wz = self.pc;
 		    //todo interrupt acknowledge stuff
 		},
 		0x6f => { //RLD
@@ -1265,6 +1372,7 @@ impl Cpu {
 		    self.a = (self.a & 0xf0) | tmp2;
 		    let tmp = (tmp & 0xf0) | tmp3;
 		    self.bus.write_byte(hlptr, tmp);
+		    self.wz = hlptr.wrapping_add(1);
 		},
 		0x67 => { //RRD
 		    let tmp = self.bus.read_byte(hlptr);
@@ -1274,6 +1382,7 @@ impl Cpu {
 		    let tmp = (tmp & 0xf0) | tmphi;
 		    let tmp = (tmp & 0x0f) | alo;
 		    self.a = (self.a & 0xf0) | tmplo;
+		    self.wz = hlptr.wrapping_add(1);
 		},
 		0xa0 => { //LDI
 		    let hl = self.read_rp(pfx, 2);
@@ -1305,6 +1414,9 @@ impl Cpu {
 		    
 		    if bc.wrapping_sub(1) != 0 {
 			self.pc -= 2;
+		    }
+		    if bc != 1 {
+			self.wz = self.pc.wrapping_add(1);
 		    }
 		},
 		0xa8 => { //LDD
@@ -1338,6 +1450,9 @@ impl Cpu {
 		    if bc.wrapping_sub(1) != 0 {
 			self.pc -= 2;
 		    }
+		    if bc != 1 {
+			self.wz = self.pc.wrapping_add(1);
+		    }
 		},
 		0xa1 => { //CPI
 		    let tmp = self.bus.read_byte(hlptr);
@@ -1350,10 +1465,11 @@ impl Cpu {
 		    //todo H
 		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
 		    self.f.insert(PSW::N);
+		    self.wz = self.wz.wrapping_add(1);
 		},
 		0xb1 => { //CPIR
-		    let tmp = self.bus.read_byte(hlptr);
-		    let tmp = self.a.wrapping_sub(tmp);
+		    let tmp1 = self.bus.read_byte(hlptr);
+		    let tmp = self.a.wrapping_sub(tmp1);
 		    let bc = self.read_rp(pfx, 0);
 		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
 
@@ -1365,6 +1481,11 @@ impl Cpu {
 
 		    if bc.wrapping_sub(1) != 0 {
 			self.pc -= 2;
+		    }
+		    if bc.wrapping_sub(1) == 1 || self.a == tmp1 {
+			self.wz = self.wz.wrapping_add(1);
+		    } else {
+			self.wz = self.pc.wrapping_add(1);
 		    }
 		},
 		_ => {
@@ -1380,6 +1501,35 @@ impl Cpu {
 	self.r = self.r.wrapping_add(1);
 	if self.r > 0x7f {
 	    self.r = 0;
+	}
+
+	//adjust q
+	match pfx {
+	    0x00 | 0xdd | 0xfd => match opcode { //q set when flags modified
+		0x00..=0x3f => {
+		    match opcode & 0x0f {
+			0x4 | 0x5 | 0x7 | 0x9 | 0xc | 0xd | 0xf =>
+			    self.q = self.f.as_u8(),
+			_ => self.q = 0,
+		    }
+		},
+		0x40..=0x7f => self.q = 0,
+		0x80..=0xbf => self.q = self.f.as_u8(),
+		0xf1 => self.q = self.f.as_u8(),
+		_ => {
+		    match opcode & 0x0f {
+			0x6 | 0xe => self.q = self.f.as_u8(),
+			_ => self.q = 0,
+		    }
+		},
+	    },
+	    0xcb | 0xddcb | 0xfdcb => match opcode {
+		0x00..=0x7f => self.q = self.f.as_u8(),
+		_ => self.q = 0,
+	    },
+	    _ => match opcode { //0xed
+		_ => {},
+	    },
 	}
 
 	self.cycles - oldcycles

@@ -31,7 +31,6 @@ struct State {
     pub i: u8,
     pub r: u8,
     //pub ei: u8,
-    //pub wz: u16,
     pub ix: u16,
     pub iy: u16,
     pub af_: u16,
@@ -40,9 +39,10 @@ struct State {
     pub hl_: u16,
     pub im: u8,
     //pub p: u8,
-    //pub q: u8,
     pub iff1: u8,
     pub iff2: u8,
+    pub q: u8,
+    pub wz: u16,
     pub ram: Vec<(u16, u8)>,
 }
 
@@ -70,6 +70,8 @@ impl State {
 	    im: 0,
 	    iff1: 0,
 	    iff2: 0,
+	    q: 0,
+	    wz: 0,
 	    ram: Vec::new(),
 	}
     }
@@ -118,6 +120,8 @@ fn main() {
 	    cpu.im = test.initial.im;
 	    cpu.iff = test.initial.iff1 != 0;
 	    cpu.iff2 = test.initial.iff2 != 0;
+	    cpu.q = test.initial.q;
+	    cpu.wz = test.initial.wz;
 	    for r in test.initial.ram {
 		cpu.bus.write_byte(r.0, r.1);
 	    }
@@ -147,6 +151,8 @@ fn main() {
 	    after.im = cpu.im;
 	    after.iff1 = cpu.iff as u8;
 	    after.iff2 = cpu.iff2 as u8;
+	    after.q = cpu.q;
+	    after.wz = cpu.wz;
 	    for r in &test.r#final.ram {
 		after.ram.push((r.0, cpu.bus.read_byte(r.0)));
 	    }
