@@ -119,19 +119,19 @@ impl Bus for CpmBus {
 
     fn read_io_byte(&mut self, port: u16) -> u8 {
 	match port {
-	    _ =>
-		todo!("unhandled io port read {port:04x}"),
+	    _ => 0,
+		//todo!("unhandled io port read {port:04x}"),
 	}
     }
 
     fn write_io_byte(&mut self, port: u16, data: u8) {
 	match port {
 	    0x00aa => {
-		print!("{}", data as char);
+		//print!("{}", data as char);
 	    },
-	    0x00ff => panic!("warm booted"),
-	    _ =>
-		todo!("unhandled io port write {port:04x}"),
+	    //0x00ff => panic!("warm booted"),
+	    _ => {},
+		//todo!("unhandled io port write {port:04x}"),
 	};
     }
 

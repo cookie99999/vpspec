@@ -719,12 +719,12 @@ impl Cpu {
 		self.f.set(PSW::S, y == 7 && ((tmp & 0x80) !=0));
 		self.f.insert(PSW::H);
 		self.f.remove(PSW::N);
-		if d == 6 {
-		    self.f.set(PSW::X, ((self.wz >> 8) & 0x08) != 0);
-		    self.f.set(PSW::Y, ((self.wz >> 8) & 0x20) != 0);
-		} else if pfx == 0xddcb || pfx == 0xfdcb {
+		if pfx == 0xddcb || pfx == 0xfdcb {
 		    self.f.set(PSW::X, ((hlptr >> 8) & 0x08) != 0);
 		    self.f.set(PSW::Y, ((hlptr >> 8) & 0x20) != 0);
+		} else if d == 6 {
+		    self.f.set(PSW::X, ((self.wz >> 8) & 0x08) != 0);
+		    self.f.set(PSW::Y, ((self.wz >> 8) & 0x20) != 0);
 		} else {
 		    self.f.set(PSW::X, (s & 0x08) != 0);
 		    self.f.set(PSW::Y, (s & 0x20) != 0);
@@ -828,10 +828,12 @@ impl Cpu {
 	let c = d_bits;
 	let n = d_bits;
 	let hlptr = match pfx {
-	    0xdd | 0xddcb => {
+	    0xdd => self.ix,
+	    0xddcb => {
 		self.ix.wrapping_add_signed((op1 as i8) as i16)
 	    },
-	    0xfd | 0xfdcb => {
+	    0xfd => self.iy,
+	    0xfdcb => {
 		self.iy.wrapping_add_signed((op1 as i8) as i16)
 	    },
 	    _ => self.read_rp(pfx, 2),
@@ -1105,7 +1107,15 @@ impl Cpu {
 		0x04 | 0x14 | 0x24 | 0x34 |
 		0x0c | 0x1c | 0x2c | 0x3c => { //INC r
 		    let mut tmp = d.wrapping_add(1) as u16;
-		    if d_bits == 6 {
+		    let hlptr = match pfx {
+			0xdd => self.ix.wrapping_add_signed((op1 as i8) as i16),
+			0xfd => self.iy.wrapping_add_signed((op1 as i8) as i16),
+			_ => hlptr,
+		    };
+		    if (pfx == 0xdd || pfx == 0xfd) && opcode == 0x34 {
+			self.wz = hlptr;
+		    }
+		    if d_bits == 6 || opcode == 0x34 {
 			tmp = self.bus.read_byte(hlptr).wrapping_add(1) as u16;
 		    }
 		    self.f.remove(PSW::N);
@@ -1578,8 +1588,7 @@ impl Cpu {
 		
 		self.bitop(pfx, opcode, s, hlptr, true);
 		self.wz = hlptr;
-		self.r = self.r.wrapping_sub(1); //todo fix this at the source
-		self.pc = self.pc.wrapping_add(1);	    
+		self.r = self.r.wrapping_sub(1); //todo fix this at the source	    
 	    },
 	    _ => panic!("bad prefix {pfx:04x}"),
 	};
