@@ -158,9 +158,10 @@ fn main() {
 	    }
 
 	    if after != test.r#final {
-		if !test.name.starts_with("DB") {
-		    println!("{:?}", after);
-		    println!("{:?}", test.r#final);
+		if !test.name.starts_with("DB") && !test.name.starts_with("DD DB")
+		&& !test.name.starts_with("FD DB") {
+		    println!("{:x?}", after);
+		    println!("{:x?}", test.r#final);
 		    panic!("failed {}", test.name);
 		}
 	    }

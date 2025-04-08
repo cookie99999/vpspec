@@ -416,13 +416,13 @@ impl Cpu {
 	    2 => self.d = s,
 	    3 => self.e = s,
 	    4 => match pfx {
-		0xdd | 0xddcb => self.ix = (self.ix & 0x00ff) | (s as u16) << 8,
-		0xfd | 0xfdcb => self.iy = (self.iy & 0x00ff) | (s as u16) << 8,
+		0xdd => self.ix = (self.ix & 0x00ff) | (s as u16) << 8,
+		0xfd => self.iy = (self.iy & 0x00ff) | (s as u16) << 8,
 		_ => self.h = s,
 	    },
 	    5 => match pfx {
-		0xdd | 0xddcb => self.ix = (self.ix & 0xff00) | s as u16,
-		0xfd | 0xfdcb => self.iy = (self.iy & 0xff00) | s as u16,
+		0xdd => self.ix = (self.ix & 0xff00) | s as u16,
+		0xfd => self.iy = (self.iy & 0xff00) | s as u16,
 		_ => self.l = s,
 	    },
 	    6 => self.bus.write_byte(hlptr, s),
@@ -563,7 +563,7 @@ impl Cpu {
 	};
     }
 
-    fn bitop(&mut self, pfx: u16, opcode: u8, s: u8, hlptr: u16) {
+    fn bitop(&mut self, pfx: u16, opcode: u8, s: u8, hlptr: u16, index: bool) {
 	let op = (opcode >> 6) & 3;
 	let y = (opcode >> 3) & 7;
 	let d = opcode & 7;
@@ -574,6 +574,10 @@ impl Cpu {
 		    let tmp = (s & 0x80) >> 7;
 		    let result = (s << 1) | tmp;
 		    self.movb(pfx, d, result, hlptr);
+		    if index {
+			//for OP (IX+d), r type instructions
+			self.movb(pfx, 6, result, hlptr);
+		    }
 		    
 		    self.f.set(PSW::C, tmp != 0);
 		    self.f.set(PSW::S, (result & 0x80) != 0);
@@ -588,6 +592,9 @@ impl Cpu {
 		    let tmp = (s & 1) << 7;
 		    let result = (s >> 1) | tmp;
 		    self.movb(pfx, d, result, hlptr);
+		    if index {
+			self.movb(pfx, 6, result, hlptr);
+		    }
 
 		    self.f.set(PSW::C, tmp != 0);
 		    self.f.set(PSW::S, (result & 0x80) != 0);
@@ -603,6 +610,9 @@ impl Cpu {
 		    let b7 = (s & 0x80) >> 7;
 		    let result = (s << 1) | cy;
 		    self.movb(pfx, d, result, hlptr);
+		    if index {
+			self.movb(pfx, 6, result, hlptr);
+		    }
 
 		    self.f.set(PSW::C, b7 != 0);
 		    self.f.set(PSW::S, (result & 0x80) != 0);
@@ -618,6 +628,9 @@ impl Cpu {
 		    let b0 = s & 1;
 		    let result = (s >> 1) | (cy << 7);
 		    self.movb(pfx, d, result, hlptr);
+		    if index {
+			self.movb(pfx, 6, result, hlptr);
+		    }
 
 		    self.f.set(PSW::C, b0 != 0);
 		    self.f.set(PSW::S, (result & 0x80) != 0);
@@ -632,6 +645,9 @@ impl Cpu {
 		    let b7 = s & 0x80;
 		    let result = s << 1;
 		    self.movb(pfx, d, result, hlptr);
+		    if index {
+			self.movb(pfx, 6, result, hlptr);
+		    }
 
 		    self.f.set(PSW::C, b7 != 0);
 		    self.f.set(PSW::S, (result & 0x80) != 0);
@@ -647,6 +663,9 @@ impl Cpu {
 		    let b0 = s & 1;
 		    let result = (s >> 1) | b7;
 		    self.movb(pfx, d, result, hlptr);
+		    if index {
+			self.movb(pfx, 6, result, hlptr);
+		    }
 
 		    self.f.set(PSW::C, b0 != 0);
 		    self.f.set(PSW::S, (result & 0x80) != 0);
@@ -661,6 +680,9 @@ impl Cpu {
 		    let b7 = s & 0x80;
 		    let result = (s << 1) | 1;
 		    self.movb(pfx, d, result, hlptr);
+		    if index {
+			self.movb(pfx, 6, result, hlptr);
+		    }
 
 		    self.f.set(PSW::C, b7 != 0);
 		    self.f.set(PSW::S, (result & 0x80) != 0);
@@ -675,6 +697,9 @@ impl Cpu {
 		    let b0 = s & 1;
 		    let result = s >> 1;
 		    self.movb(pfx, d, result, hlptr);
+		    if index {
+			self.movb(pfx, 6, result, hlptr);
+		    }
 
 		    self.f.set(PSW::C, b0 != 0);
 		    self.f.set(PSW::S, (result & 0x80) != 0);
@@ -697,6 +722,9 @@ impl Cpu {
 		if d == 6 {
 		    self.f.set(PSW::X, ((self.wz >> 8) & 0x08) != 0);
 		    self.f.set(PSW::Y, ((self.wz >> 8) & 0x20) != 0);
+		} else if pfx == 0xddcb || pfx == 0xfdcb {
+		    self.f.set(PSW::X, ((hlptr >> 8) & 0x08) != 0);
+		    self.f.set(PSW::Y, ((hlptr >> 8) & 0x20) != 0);
 		} else {
 		    self.f.set(PSW::X, (s & 0x08) != 0);
 		    self.f.set(PSW::Y, (s & 0x20) != 0);
@@ -705,10 +733,16 @@ impl Cpu {
 	    2 => { //RES
 		let tmp = s & !(1 << y);
 		self.movb(pfx, d, tmp, hlptr);
+		if index {
+			self.movb(pfx, 6, tmp, hlptr);
+		}
 	    },
 	    _ => { //SET
 		let tmp = s | (1 << y);
 		self.movb(pfx, d, tmp, hlptr);
+		if index {
+			self.movb(pfx, 6, tmp, hlptr);
+		}
 	    },
 	};
     }
@@ -743,7 +777,7 @@ impl Cpu {
 		    };
 		},
 		0xdd => {
-		    pfx = if pfx != 0xcb && pfx != 0xed {
+		    pfx = if pfx != 0xcb && pfx != 0xed && pfx != 0xddcb && pfx != 0xfdcb {
 			self.r = self.r.wrapping_add(1);
 			if self.r > 0x7f {
 			    self.r = 0;
@@ -754,7 +788,7 @@ impl Cpu {
 		    };
 		},
 		0xfd => {
-		    pfx = if pfx != 0xcb && pfx != 0xed {
+		    pfx = if pfx != 0xcb && pfx != 0xed && pfx != 0xddcb && pfx != 0xfdcb {
 			self.r = self.r.wrapping_add(1);
 			if self.r > 0x7f {
 			    self.r = 0;
@@ -768,10 +802,15 @@ impl Cpu {
 	    };
 	    i += 1;
 	}
-		
-	let op1 = self.bus.read_byte(self.pc.wrapping_add(i + 1));
+
+	let mut op1 = self.bus.read_byte(self.pc.wrapping_add(i + 1));
 	let op2 = self.bus.read_byte(self.pc.wrapping_add(i + 2));
 	let opw = ((op2 as u16) << 8) | op1 as u16;
+	if pfx == 0xddcb || pfx == 0xfdcb {
+	    let tmp = opcode;
+	    opcode = op1;
+	    op1 = tmp;
+	}
 
 	let instr: Instruction = match pfx {
 	    0xcb => CB_SET[opcode as usize],
@@ -793,7 +832,7 @@ impl Cpu {
 		self.ix.wrapping_add_signed((op1 as i8) as i16)
 	    },
 	    0xfd | 0xfdcb => {
-		((self.iy as i16) + op1 as i16) as u16
+		self.iy.wrapping_add_signed((op1 as i8) as i16)
 	    },
 	    _ => self.read_rp(pfx, 2),
 	};
@@ -1360,13 +1399,23 @@ impl Cpu {
 		0x4b | 0x5b | 0x6b | 0x7b => { //LD rp, (nn)
 		    let tmp = self.bus.read_word(opw);
 		    self.write_rp(pfx, rp, tmp);
-		    self.wz = tmp.wrapping_add(1);
+		    self.wz = opw.wrapping_add(1);
 		},
 		0x46 | 0x56 | 0x5e => { //IM y
 		    self.im = d;
 		},
-		0x44 => { //NEG
-		    self.a = self.a ^ 0x80;
+		0x44 | 0x54 | 0x64 | 0x74 |
+		0x4c | 0x5c | 0x6c | 0x7c => { //NEG
+		    let tmp = 0_u16.wrapping_sub(self.a as u16);
+		    self.f.set(PSW::S, (tmp & 0x80) != 0);
+		    self.f.set(PSW::Z, (tmp & 0xff) == 0);
+		    self.f.set(PSW::Y, (tmp & 0x20) != 0);
+		    self.f.set(PSW::H, ((0 & 0x0f) as i8) - ((tmp & 0x0f) as i8) < 0);
+		    self.f.set(PSW::X, (tmp & 0x08) != 0);
+		    self.f.set(PSW::P, ((0 & 0x80) != (self.a & 0x80)) && ((tmp & 0x80) != ((0 as u16) & 0x80)));
+		    self.f.insert(PSW::N);
+		    self.f.set(PSW::C, tmp > 0xff);
+		    self.a = tmp as u8;
 		},
 		0x47 => { //LD I, A
 		    self.i = self.a;
@@ -1517,8 +1566,20 @@ impl Cpu {
 		    todo!("unimplemented instruction ED {opcode:02X}");
 		},
 	    },
-	    0xcb | 0xddcb | 0xfdcb => {
-		self.bitop(pfx, opcode, s, hlptr);
+	    0xcb => {
+		self.bitop(pfx, opcode, s, hlptr, false);
+	    },
+	    0xddcb | 0xfdcb => {
+		let hlptr = match pfx {
+		    0xddcb => self.ix.wrapping_add_signed((op1 as i8) as i16),
+		    _ => self.iy.wrapping_add_signed((op1 as i8) as i16),
+		};
+		let s = self.bus.read_byte(hlptr);
+		
+		self.bitop(pfx, opcode, s, hlptr, true);
+		self.wz = hlptr;
+		self.r = self.r.wrapping_sub(1); //todo fix this at the source
+		self.pc = self.pc.wrapping_add(1);	    
 	    },
 	    _ => panic!("bad prefix {pfx:04x}"),
 	};
@@ -1548,12 +1609,31 @@ impl Cpu {
 		    }
 		},
 	    },
-	    0xcb | 0xddcb | 0xfdcb => match opcode {
+	    0xcb => match opcode {
+		0x00..=0x7f => self.q = self.f.as_u8(),
+		_ => self.q = 0,
+	    },
+	    0xddcb | 0xfdcb => match opcode {
 		0x00..=0x7f => self.q = self.f.as_u8(),
 		_ => self.q = 0,
 	    },
 	    _ => match opcode { //0xed
-		_ => {},
+		0x00..=0x3f | 0xc0..=0xff | 0x80..=0x9f => self.q = 0,
+		0xa0..=0xbf => match opcode & 0xf {
+		    0x0 | 0x1 | 0x2 | 0x3 |
+		    0x8 | 0x9 | 0xa | 0xb => self.q = self.f.as_u8(),
+		    _ => self.q = 0,
+		},
+		0x40..=0x7f => match opcode & 0xf {
+		    0x0 | 0x2 | 0x4 |
+		    0x8 | 0xa | 0xc => self.q = self.f.as_u8(),
+		    0x7 | 0xf => match (opcode & 0xf0) >> 4 {
+			0x5 | 0x6 => self.q = self.f.as_u8(),
+			_ => self.q = 0,
+		    },
+		    _ => self.q = 0,
+		},  
+		_ => self.q = 0,
 	    },
 	}
 
