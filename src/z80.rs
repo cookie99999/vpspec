@@ -1260,6 +1260,7 @@ impl Cpu {
 		},
 		0xf3 => { //DI
 		    self.iff = false;
+		    self.iff2 = false;
 		},
 		0xfb => { //EI
 		    self.iff = true;
@@ -1398,6 +1399,8 @@ impl Cpu {
 		},
 		0x4a | 0x5a | 0x6a | 0x7a => { //ADC HL, rp
 		    let hl = self.read_rp(pfx, 2);
+		    let hlhi = ((hl >> 8) & 0xff) as u8;
+		    let hllo = (hl & 0xff) as u8;
 		    let s = self.read_rp(pfx, rp);
 		    let cflag = self.f.contains(PSW::C) as u16;
 		    
@@ -1409,8 +1412,9 @@ impl Cpu {
 		    self.f.remove(PSW::N);
 		    self.f.set(PSW::S, (msb & 0x80) != 0);
 		    self.f.set(PSW::H, ((msb ^ (hl >> 8) ^ (s >> 8)) & (1 << 4)) != 0);
-		    self.f.set(PSW::P, ((msb ^ (hl >> 8) ^ (s >> 8)) & (1 << 7)) !=
-			       ((msb ^ (hl >> 8) ^ (s >> 8)) & (1 << 8)));
+		    self.f.set(PSW::P, ((hl & 0x8000) == (s & 0x8000)) && ((msb as u8 & 0x80) != (hlhi & 0x80)));
+		    self.f.set(PSW::Y, (msb & 0x20) != 0);
+		    self.f.set(PSW::X, (msb & 0x08) != 0);
 		    
 		    let tmp = (msb << 8) | (lsb & 0xff);
 		    self.f.set(PSW::Z, tmp == 0);
@@ -1427,7 +1431,8 @@ impl Cpu {
 		    self.write_rp(pfx, rp, tmp);
 		    self.wz = opw.wrapping_add(1);
 		},
-		0x46 | 0x56 | 0x5e | 0x6e => { //IM y
+		0x46 | 0x56 | 0x66 | 0x76 |
+		0x4e | 0x5e | 0x6e | 0x7e => { //IM y
 		    let im = [0, 0, 1, 2, 0, 0, 1, 2];
 		    self.im = im[((opcode >> 3) & 7) as usize];
 		},

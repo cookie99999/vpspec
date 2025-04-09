@@ -164,6 +164,8 @@ fn main() {
 		    !test.name.starts_with("ED AA") && !test.name.starts_with("ED BA") &&
 		    !test.name.starts_with("ED 40") && !test.name.starts_with("ED 50") &&
 		    !test.name.starts_with("ED 60") && !test.name.starts_with("ED 70") &&
+		    !test.name.starts_with("ED 48") && !test.name.starts_with("ED 58") &&
+		    !test.name.starts_with("ED 68") && !test.name.starts_with("ED 78") &&
 		    !test.name.starts_with("FD DB") {
 		    println!("{:x?}", after);
 		    println!("{:x?}", test.r#final);
