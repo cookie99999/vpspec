@@ -305,7 +305,7 @@ pub struct Cpu {
     pub r: u8,
     pub bus: bus::CpmBus,
     pub cycles: usize,
-    ei_pend: bool,
+    pub ei_pend: bool,
     dbg: bool,
     pub q: u8,
     pub wz: u16,
@@ -828,12 +828,10 @@ impl Cpu {
 	let c = d_bits;
 	let n = d_bits;
 	let hlptr = match pfx {
-	    0xdd => self.ix,
-	    0xddcb => {
+	    0xdd | 0xddcb => {
 		self.ix.wrapping_add_signed((op1 as i8) as i16)
 	    },
-	    0xfd => self.iy,
-	    0xfdcb => {
+	    0xfd | 0xfdcb => {
 		self.iy.wrapping_add_signed((op1 as i8) as i16)
 	    },
 	    _ => self.read_rp(pfx, 2),
@@ -1240,7 +1238,11 @@ impl Cpu {
 		    }
 		},
 		0xe9 => { //JP (HL)
-		    self.pc = hlptr;
+		    self.pc = match pfx {
+			0xdd => self.ix,
+			0xfd => self.iy,
+			_ => hlptr,
+		    };
 		},
 		0xc0 | 0xc2..=0xc4 | 0xc7..=0xcd | 0xcf |
 		0xd0 | 0xd2 | 0xd4 | 0xd7 | 0xd8 | 0xda | 0xdc | 0xdf |
@@ -1260,6 +1262,8 @@ impl Cpu {
 		    self.iff = false;
 		},
 		0xfb => { //EI
+		    self.iff = true;
+		    self.iff2 = true;
 		    self.ei_pend = true;
 		},
 		0x08 => { //EX AF, AF'
@@ -1332,7 +1336,7 @@ impl Cpu {
 		_ => panic!("Prefix byte somehow got to decode"),
 	    },
 	    0xed => match opcode { //misc prefix
-		0x40 | 0x50 | 0x60 |
+		0x40 | 0x50 | 0x60 | 0x70 |
 		0x48 | 0x58 | 0x68 | 0x78 => { //16 bit IN
 		    let bctmp = self.read_rp(pfx, 0);
 		    let tmp = self.bus.read_io_byte(bctmp);
@@ -1347,9 +1351,17 @@ impl Cpu {
 			6 => {},
 			_ => self.a = tmp,
 		    };
+
+		    self.f.set(PSW::S, (tmp & 0x80) != 0);
+		    self.f.set(PSW::Z, tmp == 0);
+		    self.f.set(PSW::Y, (tmp & 0x20) != 0);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (tmp & 0x08) != 0);
+		    self.f.set(PSW::P, (tmp.count_ones() % 2) == 0);
+		    self.f.remove(PSW::N);
 		    self.wz = bctmp.wrapping_add(1);
 		},
-		0x41 | 0x51 | 0x61 |
+		0x41 | 0x51 | 0x61 | 0x71 |
 		0x49 | 0x59 | 0x69 | 0x79 => { //16 bit OUT
 		    let bctmp = self.read_rp(pfx, 0);
 
@@ -1362,6 +1374,8 @@ impl Cpu {
 		},
 		0x42 | 0x52 | 0x62 | 0x72 => { //SBC HL, rp
 		    let hl = self.read_rp(pfx, 2);
+		    let hlhi = ((hl >> 8) & 0xff) as u8;
+		    let hllo = (hl & 0xff) as u8;
 		    let s = self.read_rp(pfx, rp);
 		    let cflag = self.f.contains(PSW::C) as u16;
 		    
@@ -1372,8 +1386,10 @@ impl Cpu {
 		    self.f.set(PSW::C, msb <= 0xff);
 		    self.f.insert(PSW::N);
 		    self.f.set(PSW::H, ((msb ^ (hl >> 8) ^ ((!(s >> 8)) & 0xff)) & (1 << 4)) == 0);
-		    self.f.set(PSW::P, ((hl ^ s) & 0x8000) != 0 && ((msb ^ s ^ s) & 0x8000) != 0);
+		    self.f.set(PSW::P, ((hl & 0x8000) != (s & 0x8000)) && ((msb as u8 & 0x80) != (hlhi & 0x80)));
 		    self.f.set(PSW::S, (msb & 0x80) != 0);
+		    self.f.set(PSW::Y, (msb & 0x20) != 0);
+		    self.f.set(PSW::X, (msb & 0x08) != 0);
 		    
 		    let tmp = (msb << 8) | (lsb & 0xff);
 		    self.f.set(PSW::Z, tmp == 0);
@@ -1404,15 +1420,16 @@ impl Cpu {
 		0x43 | 0x53 | 0x63 | 0x73 => { //LD (nn), rp
 		    let tmp = self.read_rp(pfx, rp);
 		    self.bus.write_word(opw, tmp);
-		    self.wz = tmp.wrapping_add(1);
+		    self.wz = opw.wrapping_add(1);
 		},
 		0x4b | 0x5b | 0x6b | 0x7b => { //LD rp, (nn)
 		    let tmp = self.bus.read_word(opw);
 		    self.write_rp(pfx, rp, tmp);
 		    self.wz = opw.wrapping_add(1);
 		},
-		0x46 | 0x56 | 0x5e => { //IM y
-		    self.im = d;
+		0x46 | 0x56 | 0x5e | 0x6e => { //IM y
+		    let im = [0, 0, 1, 2, 0, 0, 1, 2];
+		    self.im = im[((opcode >> 3) & 7) as usize];
 		},
 		0x44 | 0x54 | 0x64 | 0x74 |
 		0x4c | 0x5c | 0x6c | 0x7c => { //NEG
@@ -1439,13 +1456,15 @@ impl Cpu {
 		0x5f => { //LD A, R
 		    self.a = self.r;
 		},
-		0x45 => { //RETN
+		0x45 | 0x5d | 0x6d | 0x7d => { //RETN
 		    self.iff = self.iff2;
 		    self.pc = self.pop_word();
+		    self.wz = self.pc;
 		},
 		0x4d => { //RETI
 		    self.pc = self.pop_word();
 		    self.wz = self.pc;
+		    self.iff = self.iff2;
 		    //todo interrupt acknowledge stuff
 		},
 		0x6f => { //RLD
@@ -1527,6 +1546,9 @@ impl Cpu {
 		    self.write_rp(pfx, 2, hl.wrapping_sub(1));
 		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
 
+		    let n = tmp.wrapping_add(self.a);
+		    self.f.set(PSW::X, (n & 0x02) != 0);
+		    self.f.set(PSW::Y, (n & 0x08) != 0);
 		    self.f.remove(PSW::H);
 		    self.f.remove(PSW::N);
 		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
@@ -1538,39 +1560,132 @@ impl Cpu {
 			self.wz = self.pc.wrapping_add(1);
 		    }
 		},
-		0xa1 => { //CPI
-		    let tmp = self.bus.read_byte(hlptr);
-		    let tmp = self.a.wrapping_sub(tmp);
-		    let bc = self.read_rp(pfx, 0);
-		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
-
-		    self.f.set(PSW::S, (tmp & 0x80) != 0);
-		    self.f.set(PSW::Z, tmp == 0);
-		    //todo H
-		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-		    self.f.insert(PSW::N);
-		    self.wz = self.wz.wrapping_add(1);
-		},
-		0xb1 => { //CPIR
+		0xa1 | 0xb1 | 0xa9 | 0xb9 => { //CPI/CPD/CPIR/CPDR
 		    let tmp1 = self.bus.read_byte(hlptr);
 		    let tmp = self.a.wrapping_sub(tmp1);
 		    let bc = self.read_rp(pfx, 0);
 		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
+		    let hl = self.read_rp(pfx, 2);
+		    if opcode == 0xa1 || opcode == 0xb1 {
+			self.write_rp(pfx, 2, hl.wrapping_add(1));
+		    } else {
+			self.write_rp(pfx, 2, hl.wrapping_sub(1));
+		    }
 
 		    self.f.set(PSW::S, (tmp & 0x80) != 0);
 		    self.f.set(PSW::Z, tmp == 0);
-		    //todo H
+		    self.f.set(PSW::H, ((self.a & 0x0f) as i8) - ((tmp & 0x0f) as i8) < 0);
+		    let n = self.a.wrapping_sub(tmp1).wrapping_sub(self.f.contains(PSW::H) as u8);
+		    self.f.set(PSW::X, (n & 0x08) != 0);
+		    self.f.set(PSW::Y, (n & 0x02) != 0);
 		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
 		    self.f.insert(PSW::N);
+		    self.wz = self.wz.wrapping_add(1);
 
-		    if bc.wrapping_sub(1) != 0 {
-			self.pc -= 2;
+		    if opcode == 0xb1 || opcode == 0xb9 {
+			if bc.wrapping_sub(1) != 0 {
+			    self.pc -= 2;
+			}
+			if bc.wrapping_sub(1) == 1 || self.a == tmp1 {
+			    self.wz = self.wz.wrapping_add(1);
+			} else {
+			    self.wz = self.pc.wrapping_add(1);
+			}
 		    }
-		    if bc.wrapping_sub(1) == 1 || self.a == tmp1 {
-			self.wz = self.wz.wrapping_add(1);
-		    } else {
-			self.wz = self.pc.wrapping_add(1);
-		    }
+		},
+		0xa2 => { //INI
+		    let bc = self.read_rp(pfx, 0);
+		    self.wz = bc.wrapping_add(1);
+		    let tmp = self.bus.read_io_byte(bc);
+		    self.bus.write_byte(hlptr, tmp);
+		    let btmp = self.b.wrapping_sub(1);
+		    let hl = self.read_rp(pfx, 2);
+		    let hl = hl.wrapping_add(1);
+		    self.write_rp(pfx, 2, hl);
+
+		    let k = self.c.wrapping_add(1) as u16 + tmp as u16;
+
+		    self.f.set(PSW::N, (tmp & 0x80) != 0);
+		    self.f.set(PSW::Z, btmp == 0);
+		    self.f.set(PSW::S, (btmp & 0x80) != 0);
+		    self.f.set(PSW::H, k > 0xff);
+		    self.f.set(PSW::C, k > 0xff);
+		    let k = ((k as u8) & 7) ^ (btmp);
+		    self.f.set(PSW::P, (k.count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (btmp & 0x08) != 0);
+		    self.f.set(PSW::Y, (btmp & 0x20) != 0);
+		    self.b = btmp;
+		},
+		0xaa => { //IND
+		    let bc = self.read_rp(pfx, 0);
+		    self.wz = bc.wrapping_sub(1);
+		    let tmp = self.bus.read_io_byte(bc);
+		    self.bus.write_byte(hlptr, tmp);
+		    let btmp = self.b.wrapping_sub(1);
+		    let hl = self.read_rp(pfx, 2);
+		    let hl = hl.wrapping_sub(1);
+		    self.write_rp(pfx, 2, hl);
+
+		    let k = self.c.wrapping_sub(1) as u16 + tmp as u16;
+		    
+		    self.f.set(PSW::N, (tmp & 0x80) != 0);
+		    self.f.set(PSW::Z, btmp == 0);
+		    self.f.set(PSW::S, (btmp & 0x80) != 0);
+		    self.f.set(PSW::H, k > 0xff);
+		    self.f.set(PSW::C, k > 0xff);
+		    let k = ((k as u8) & 7) ^ (btmp);
+		    self.f.set(PSW::P, (k.count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (btmp & 0x08) != 0);
+		    self.f.set(PSW::Y, (btmp & 0x20) != 0);
+		    self.b = btmp;
+		},
+		0xa3 => { //OUTI
+		    let bc = self.read_rp(pfx, 0);
+		    let hl = self.read_rp(pfx, 2);
+		    let tmp = self.bus.read_byte(hlptr);
+		    self.bus.write_io_byte(bc, tmp);
+		    let btmp = self.b.wrapping_sub(1);
+		    let hl = hl.wrapping_add(1);
+		    self.write_rp(pfx, 2, hl);
+
+		    let k = self.l as u16;
+		    let k = k + (tmp as u16);
+
+		    self.f.set(PSW::N, (tmp & 0x80) != 0);
+		    self.f.set(PSW::Z, btmp == 0);
+		    self.f.set(PSW::S, (btmp & 0x80) != 0);
+		    self.f.set(PSW::H, k > 0xff);
+		    self.f.set(PSW::C, k > 0xff);
+		    let k = ((k as u8) & 7) ^ (btmp);
+		    self.f.set(PSW::P, (k.count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (btmp & 0x08) != 0);
+		    self.f.set(PSW::Y, (btmp & 0x20) != 0);
+		    self.b = btmp;
+		    self.wz = self.read_rp(pfx, 0).wrapping_add(1);
+		},
+		0xab => { //OUTD
+		    let bc = self.read_rp(pfx, 0);
+		    let hl = self.read_rp(pfx, 2);
+		    let tmp = self.bus.read_byte(hlptr);
+		    self.bus.write_io_byte(bc, tmp);
+		    let btmp = self.b.wrapping_sub(1);
+		    let hl = hl.wrapping_sub(1);
+		    self.write_rp(pfx, 2, hl);
+
+		    let k = self.l as u16;
+		    let k = k + (tmp as u16);
+
+		    self.f.set(PSW::N, (tmp & 0x80) != 0);
+		    self.f.set(PSW::Z, btmp == 0);
+		    self.f.set(PSW::S, (btmp & 0x80) != 0);
+		    self.f.set(PSW::H, k > 0xff);
+		    self.f.set(PSW::C, k > 0xff);
+		    let k = ((k as u8) & 7) ^ (btmp);
+		    self.f.set(PSW::P, (k.count_ones() % 2) == 0);
+		    self.f.set(PSW::X, (btmp & 0x08) != 0);
+		    self.f.set(PSW::Y, (btmp & 0x20) != 0);
+		    self.b = btmp;
+		    self.wz = self.read_rp(pfx, 0).wrapping_sub(1);
 		},
 		_ => {
 		    todo!("unimplemented instruction ED {opcode:02X}");
@@ -1610,7 +1725,7 @@ impl Cpu {
 		},
 		0x40..=0x7f => self.q = 0,
 		0x80..=0xbf => self.q = self.f.as_u8(),
-		0xf1 => self.q = self.f.as_u8(),
+		0xf1 => self.q = 0,
 		_ => {
 		    match opcode & 0x0f {
 			0x6 | 0xe => self.q = self.f.as_u8(),

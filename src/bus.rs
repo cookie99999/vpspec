@@ -104,7 +104,7 @@ impl Bus for CpmBus {
     }
 
     fn read_word(&mut self, addr: u16) -> u16 {
-	let result: u16 = self.read_byte(addr) as u16 | ((self.read_byte(addr + 1) as u16) << 8);
+	let result: u16 = self.read_byte(addr) as u16 | ((self.read_byte(addr.wrapping_add(1)) as u16) << 8);
 	result
     }
 
@@ -113,7 +113,7 @@ impl Bus for CpmBus {
     }
 
     fn write_word(&mut self, addr: u16, data: u16) {
-	self.write_byte(addr + 1, (data >> 8) as u8);
+	self.write_byte(addr.wrapping_add(1), (data >> 8) as u8);
 	self.write_byte(addr, (data & 0x00ff) as u8);
     }
 
