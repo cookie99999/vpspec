@@ -825,8 +825,7 @@ impl Cpu {
 	let d_bits = (opcode >> 3) & 7;
 	let s = opcode & 7;
 	let rp = (opcode >> 4) & 3;
-	let c = d_bits;
-	let n = d_bits;
+	let c = d_bits; //todo: cleanup names of opcode parts to be more consistent (xyz)
 	let hlptr = match pfx {
 	    0xdd | 0xddcb => {
 		self.ix.wrapping_add_signed((op1 as i8) as i16)
@@ -1137,7 +1136,7 @@ impl Cpu {
 		    self.f.set(PSW::Z, tmp == 0);
 		    self.f.set(PSW::S, (tmp & 0x80) != 0);
 		    self.f.set(PSW::P, ((d & 0x80) != (1 & 0x80)) && ((tmp & 0x80) != ((d as u16) & 0x80)));
-		    self.f.set(PSW::H, ((d & 0x0f) < (1 & 0x0f) + 0));
+		    self.f.set(PSW::H, (d & 0x0f) < (1 & 0x0f) + 0);
 		    self.f.set(PSW::X, (tmp & 0x08) != 0);
 		    self.f.set(PSW::Y, (tmp & 0x20) != 0);
 		    let tmp = tmp as u8;
@@ -1381,13 +1380,13 @@ impl Cpu {
 		    let s = self.read_rp(pfx, rp);
 		    let cflag = self.f.contains(PSW::C) as u16;
 		    
-		    let lsb = (hl & 0xff).wrapping_add(!(s & 0xff)).wrapping_add(!cflag & 1);
+		    let lsb = (hllo as u16).wrapping_add(!(s & 0xff)).wrapping_add(!cflag & 1);
 		    let cflag = (lsb > 0xff) as u16;
 
-		    let msb = (hl >> 8).wrapping_add(!(s >> 8) & 0xff).wrapping_add(!cflag & 1);
+		    let msb = (hlhi as u16).wrapping_add(!(s >> 8) & 0xff).wrapping_add(!cflag & 1);
 		    self.f.set(PSW::C, msb <= 0xff);
 		    self.f.insert(PSW::N);
-		    self.f.set(PSW::H, ((msb ^ (hl >> 8) ^ ((!(s >> 8)) & 0xff)) & (1 << 4)) == 0);
+		    self.f.set(PSW::H, ((msb ^ (hlhi as u16) ^ ((!(s >> 8)) & 0xff)) & (1 << 4)) == 0);
 		    self.f.set(PSW::P, ((hl & 0x8000) != (s & 0x8000)) && ((msb as u8 & 0x80) != (hlhi & 0x80)));
 		    self.f.set(PSW::S, (msb & 0x80) != 0);
 		    self.f.set(PSW::Y, (msb & 0x20) != 0);
@@ -1405,14 +1404,14 @@ impl Cpu {
 		    let s = self.read_rp(pfx, rp);
 		    let cflag = self.f.contains(PSW::C) as u16;
 		    
-		    let lsb = (hl & 0xff).wrapping_add(s & 0xff).wrapping_add(cflag);
+		    let lsb = (hllo as u16).wrapping_add(s & 0xff).wrapping_add(cflag);
 		    let cflag = (lsb > 0xff) as u16;
 
-		    let msb = (hl >> 8).wrapping_add(s >> 8).wrapping_add(cflag);
+		    let msb = (hlhi as u16).wrapping_add(s >> 8).wrapping_add(cflag);
 		    self.f.set(PSW::C, msb > 0xff);
 		    self.f.remove(PSW::N);
 		    self.f.set(PSW::S, (msb & 0x80) != 0);
-		    self.f.set(PSW::H, ((msb ^ (hl >> 8) ^ (s >> 8)) & (1 << 4)) != 0);
+		    self.f.set(PSW::H, ((msb ^ (hlhi as u16) ^ (s >> 8)) & (1 << 4)) != 0);
 		    self.f.set(PSW::P, ((hl & 0x8000) == (s & 0x8000)) && ((msb as u8 & 0x80) != (hlhi & 0x80)));
 		    self.f.set(PSW::Y, (msb & 0x20) != 0);
 		    self.f.set(PSW::X, (msb & 0x08) != 0);
@@ -1700,10 +1699,7 @@ impl Cpu {
 		0x80..=0x9f | 0x77 | 0x7f |
 		0xa4..=0xa7 | 0xb4..=0xb7 |
 		0xac..=0xaf | 0xbc..=0xbf => { //NOP
-		    ; //nothing
-		},
-		_ => {
-		    todo!("unimplemented instruction ED {opcode:02X}");
+		    //nothing
 		},
 	    },
 	    0xcb => {
@@ -1770,7 +1766,6 @@ impl Cpu {
 		    },
 		    _ => self.q = 0,
 		},  
-		_ => self.q = 0,
 	    },
 	}
 

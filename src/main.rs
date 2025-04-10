@@ -94,7 +94,7 @@ fn main() {
     entries.sort_by_key(|e| e.path());
     for entry in entries {
 	let file = std::fs::File::open(entry.path()).unwrap();
-	let mut reader = BufReader::new(file);
+	let reader = BufReader::new(file);
 	let tests: Vec<Test> = serde_json::from_reader(reader).unwrap();
 	for test in tests {
 	    //load initial state
