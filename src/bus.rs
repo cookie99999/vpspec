@@ -94,6 +94,7 @@ impl ZXBus {
 
 pub struct CpmBus {
     ram: [u8; 0x10000],
+    ports: [u8; 0x10000],
     pub irq: bool,
     pub irq_vec: u8,
 }
@@ -119,19 +120,21 @@ impl Bus for CpmBus {
 
     fn read_io_byte(&mut self, port: u16) -> u8 {
 	match port {
-	    _ => 0,
+	    _ => self.ports[port as usize],
 		//todo!("unhandled io port read {port:04x}"),
 	}
     }
 
     fn write_io_byte(&mut self, port: u16, data: u8) {
 	match port {
-	    0x00aa => {
+	    //0x00aa => {
 		//print!("{}", data as char);
-	    },
+	    //},
 	    //0x00ff => panic!("warm booted"),
-	    _ => {},
+	    _ => {
 		//todo!("unhandled io port write {port:04x}"),
+		self.ports[port as usize] = data;
+	    },
 	};
     }
 
@@ -150,6 +153,7 @@ impl CpmBus {
     pub fn new() -> Self {
 	CpmBus {
 	    ram: [0; 0x10000],
+	    ports: [0; 0x10000],
 	    irq: false,
 	    irq_vec: 0,
 	}

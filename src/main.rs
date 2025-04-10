@@ -44,6 +44,8 @@ struct State {
     pub q: u8,
     pub wz: u16,
     pub ram: Vec<(u16, u8)>,
+    #[serde(default)]
+    pub ports: Vec<(u16, u8, char)>,
 }
 
 impl State {
@@ -73,6 +75,7 @@ impl State {
 	    q: 0,
 	    wz: 0,
 	    ram: Vec::new(),
+	    ports: Vec::new(),
 	}
     }
 }
@@ -128,6 +131,9 @@ fn main() {
 	    for r in test.initial.ram {
 		cpu.bus.write_byte(r.0, r.1);
 	    }
+	    for p in test.initial.ports {
+		cpu.bus.write_io_byte(p.0, p.1);
+	    }
 
 	    let _ = cpu.step();
 	    cpu.ei_pend = false;
@@ -160,10 +166,12 @@ fn main() {
 	    for r in &test.r#final.ram {
 		after.ram.push((r.0, cpu.bus.read_byte(r.0)));
 	    }
+	    for p in &test.r#final.ports {
+		after.ports.push((p.0, cpu.bus.read_io_byte(p.0), 'r'));
+	    }
 
 	    if after != test.r#final {
-		if !test.name.starts_with("DB") && !test.name.starts_with("DD DB") &&
-		    !test.name.starts_with("ED A2") && !test.name.starts_with("ED B2") &&
+		if !test.name.starts_with("ED A2") && !test.name.starts_with("ED B2") &&
 		    !test.name.starts_with("ED AA") && !test.name.starts_with("ED BA") &&
 		    !test.name.starts_with("ED 40") && !test.name.starts_with("ED 50") &&
 		    !test.name.starts_with("ED 60") && !test.name.starts_with("ED 70") &&
@@ -172,8 +180,7 @@ fn main() {
 		    !test.name.starts_with("ED B0") && !test.name.starts_with("ED B8") &&
 		    !test.name.starts_with("ED B1") && !test.name.starts_with("ED B9") &&
 		    !test.name.starts_with("ED B2") && !test.name.starts_with("ED BA") &&
-		    !test.name.starts_with("ED B3") && !test.name.starts_with("ED BB") &&
-		    !test.name.starts_with("FD DB") {
+		    !test.name.starts_with("ED B3") && !test.name.starts_with("ED BB") {
 		    println!("{:x?}", after);
 		    println!("{:x?}", test.r#final);
 		    panic!("failed {}", test.name);
