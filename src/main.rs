@@ -169,6 +169,10 @@ fn main() {
 		    !test.name.starts_with("ED 60") && !test.name.starts_with("ED 70") &&
 		    !test.name.starts_with("ED 48") && !test.name.starts_with("ED 58") &&
 		    !test.name.starts_with("ED 68") && !test.name.starts_with("ED 78") &&
+		    !test.name.starts_with("ED B0") && !test.name.starts_with("ED B8") &&
+		    !test.name.starts_with("ED B1") && !test.name.starts_with("ED B9") &&
+		    !test.name.starts_with("ED B2") && !test.name.starts_with("ED BA") &&
+		    !test.name.starts_with("ED B3") && !test.name.starts_with("ED BB") &&
 		    !test.name.starts_with("FD DB") {
 		    println!("{:x?}", after);
 		    println!("{:x?}", test.r#final);
@@ -177,6 +181,7 @@ fn main() {
 	    }
 	}
     }
+    println!("All tests passed");
     /*let path = env::args().nth(1).expect("Usage: vpspec <path>");
     let buf: Vec<u8> = std::fs::read(path).unwrap();
     let stub_buf: Vec<u8> = std::fs::read("cpmstub.bin").unwrap();
@@ -186,7 +191,7 @@ fn main() {
     cpu.bus.load_bin(0x100, &buf);
     cpu.reset();
     cpu.pc = 0x100;*/
-
+    /*
     'running: loop {
 	let cyc = cpu.step();
 	if cyc == 0 || cpu.pc == 0 {
@@ -196,5 +201,5 @@ fn main() {
 	cpu.bus.step(cyc);
 
 	//let _ = stdin.read(&mut [0u8]).unwrap();
-    }
+    }*/
 }

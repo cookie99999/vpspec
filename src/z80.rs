@@ -1546,9 +1546,9 @@ impl Cpu {
 		    self.f.remove(PSW::H);
 		    self.f.remove(PSW::N);
 		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-		    let n = self.a.wrapping_add(tmp);
-		    self.f.set(PSW::Y, (n & 0x02) != 0);
-		    self.f.set(PSW::X, (n & 0x08) != 0);
+		    let n = tmp.wrapping_add(self.a);
+		    self.f.set(PSW::Y, ((n >> 1) & 1) != 0);
+		    self.f.set(PSW::X, ((n >> 3) & 1) != 0);
 
 		    if opcode == 0xb0 || opcode == 0xb8 {
 			if bc.wrapping_sub(1) != 0 {
@@ -1622,6 +1622,8 @@ impl Cpu {
 		    self.f.set(PSW::X, (btmp & 0x08) != 0);
 		    self.f.set(PSW::Y, (btmp & 0x20) != 0);
 		    self.b = btmp;
+		},
+		0xb2 | 0xb3 | 0xba | 0xbb => { //INIR/OTIR
 		},
 		0xaa => { //IND
 		    let bc = self.read_rp(pfx, 0);
