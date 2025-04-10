@@ -88,8 +88,11 @@ fn main() {
     let mut cpu = z80::Cpu::new(false);
     let mut stdin = io::stdin();
 
-    for entry in std::fs::read_dir("/home/cookie/src/sstest-z80/v1/").unwrap() {
-	let entry = entry.unwrap();
+    let mut entries: Vec<_> = std::fs::read_dir("/home/cookie/src/sstest-z80/v1/").unwrap()
+	.map(|r| r.unwrap())
+	.collect();
+    entries.sort_by_key(|e| e.path());
+    for entry in entries {
 	let file = std::fs::File::open(entry.path()).unwrap();
 	let mut reader = BufReader::new(file);
 	let tests: Vec<Test> = serde_json::from_reader(reader).unwrap();

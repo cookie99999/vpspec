@@ -922,6 +922,11 @@ impl Cpu {
 	let oldcycles = self.cycles;
 
 	let (pfx, mut opcode, op1, opw, instr, d_bits, d, s, rp, c, hlptr) = self.getops();
+
+	self.r = self.r.wrapping_add(1);
+	if self.r > 0x7f {
+	    self.r = 0;
+	}
 	
 	if self.bus.irq && self.iff {
 	    self.pc -= 1; //1 byte will be added later, want to ret back to interrupted instr
@@ -983,10 +988,6 @@ impl Cpu {
 		    //nothing
 		},
 		0x76 => { //HLT
-		    self.r = self.r.wrapping_add(1);
-		    if self.r > 0x7f {
-			self.r = 0;
-		    }
 		    self.q = 0;
 		    return 0; //todo proper behavior
 		},
@@ -1454,14 +1455,31 @@ impl Cpu {
 		},
 		0x57 => { //LD A, I
 		    self.a = self.i;
+
+		    self.f.set(PSW::S, (self.a & 0x80) != 0);
+		    self.f.set(PSW::Z, self.a == 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::P, self.iff2);
+		    self.f.remove(PSW::N);
 		},
 		0x4f => { //LD R, A
 		    self.r = self.a;
 		},
 		0x5f => { //LD A, R
 		    self.a = self.r;
+
+		    self.f.set(PSW::S, (self.a & 0x80) != 0);
+		    self.f.set(PSW::Z, self.a == 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::P, self.iff2);
+		    self.f.remove(PSW::N);
 		},
-		0x45 | 0x5d | 0x6d | 0x7d => { //RETN
+		0x45 | 0x55 | 0x65 | 0x75 |
+		0x5d | 0x6d | 0x7d => { //RETN
 		    self.iff = self.iff2;
 		    self.pc = self.pop_word();
 		    self.wz = self.pc;
@@ -1474,95 +1492,71 @@ impl Cpu {
 		},
 		0x6f => { //RLD
 		    let tmp = self.bus.read_byte(hlptr);
-		    let tmp2 = (tmp & 0xf0) >> 4;
-		    let tmp = ((tmp & 0xf0) >> 4) | ((tmp & 0x0f) << 4);
-		    let tmp3 = self.a & 0x0f;
-		    self.a = (self.a & 0xf0) | tmp2;
-		    let tmp = (tmp & 0xf0) | tmp3;
-		    self.bus.write_byte(hlptr, tmp);
+		    let top = self.a & 0x0f;
+		    let mut tmp: u32 = ((top as u32) << 8) | (tmp as u32);
+		    tmp = tmp << 4;
+		    tmp = tmp | (top as u32);
+		    self.a = (self.a & 0xf0) | (((tmp >> 8) & 0x0f) as u8);
+		    let result = (tmp & 0xff) as u8;
+		    self.bus.write_byte(hlptr, result);
+
+		    self.f.set(PSW::S, (self.a & 0x80) != 0);
+		    self.f.set(PSW::Z, self.a == 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::P, (self.a.count_ones() % 2) == 0);
+		    self.f.remove(PSW::N);
 		    self.wz = hlptr.wrapping_add(1);
 		},
 		0x67 => { //RRD
 		    let tmp = self.bus.read_byte(hlptr);
-		    let tmplo = tmp & 0x0f;
-		    let alo = (self.a & 0x0f) << 4;
-		    let tmphi = (tmp & 0xf0) >> 4;
-		    let tmp = (tmp & 0xf0) | tmphi;
-		    let tmp = (tmp & 0x0f) | alo;
-		    self.a = (self.a & 0xf0) | tmplo;
+		    let bottom = tmp & 0x0f;
+		    let mut tmp: u32 = (((self.a & 0x0f) as u32) << 8) | (tmp as u32);
+		    tmp = tmp >> 4;
+		    tmp = tmp | ((bottom as u32) << 16);
+		    self.a = (self.a & 0xf0) | bottom;
+		    let result = (tmp & 0xff) as u8;
+		    self.bus.write_byte(hlptr, result);
+
+		    self.f.set(PSW::S, (self.a & 0x80) != 0);
+		    self.f.set(PSW::Z, self.a == 0);
+		    self.f.set(PSW::Y, (self.a & 0x20) != 0);
+		    self.f.remove(PSW::H);
+		    self.f.set(PSW::X, (self.a & 0x08) != 0);
+		    self.f.set(PSW::P, (self.a.count_ones() % 2) == 0);
+		    self.f.remove(PSW::N);
 		    self.wz = hlptr.wrapping_add(1);
 		},
-		0xa0 => { //LDI
+		0xa0 | 0xa8 | 0xb0 | 0xb8 => { //LDI/LDD/LDIR/LDDR
 		    let hl = self.read_rp(pfx, 2);
 		    let de = self.read_rp(pfx, 1);
 		    let bc = self.read_rp(pfx, 0);
 		    let tmp = self.bus.read_byte(hl);
 		    self.bus.write_byte(de, tmp);
-		    self.write_rp(pfx, 1, de.wrapping_add(1));
-		    self.write_rp(pfx, 2, hl.wrapping_add(1));
-		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
-
-		    self.f.remove(PSW::H);
-		    self.f.remove(PSW::N);
-		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-		},
-		0xb0 => { //LDIR
-		    let hl = self.read_rp(pfx, 2);
-		    let de = self.read_rp(pfx, 1);
-		    let bc = self.read_rp(pfx, 0);
-		    let tmp = self.bus.read_byte(hl);
-		    self.bus.write_byte(de, tmp);
-		    self.write_rp(pfx, 1, de.wrapping_add(1));
-		    self.write_rp(pfx, 2, hl.wrapping_add(1));
-		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
-		    
-		    self.f.remove(PSW::H);
-		    self.f.remove(PSW::N);
-		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-		    
-		    if bc.wrapping_sub(1) != 0 {
-			self.pc -= 2;
+		    if opcode == 0xa0 || opcode == 0xb0{
+			self.write_rp(pfx, 1, de.wrapping_add(1));
+			self.write_rp(pfx, 2, hl.wrapping_add(1));
+		    } else {
+			self.write_rp(pfx, 1, de.wrapping_sub(1));
+			self.write_rp(pfx, 2, hl.wrapping_sub(1));
 		    }
-		    if bc != 1 {
-			self.wz = self.pc.wrapping_add(1);
-		    }
-		},
-		0xa8 => { //LDD
-		    let hl = self.read_rp(pfx, 2);
-		    let de = self.read_rp(pfx, 1);
-		    let bc = self.read_rp(pfx, 0);
-		    let tmp = self.bus.read_byte(hl);
-		    self.bus.write_byte(de, tmp);
-		    self.write_rp(pfx, 1, de.wrapping_sub(1));
-		    self.write_rp(pfx, 2, hl.wrapping_sub(1));
 		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
 
 		    self.f.remove(PSW::H);
 		    self.f.remove(PSW::N);
 		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-		},
-		0xb8 => { //LDDR
-		    let hl = self.read_rp(pfx, 2);
-		    let de = self.read_rp(pfx, 1);
-		    let bc = self.read_rp(pfx, 0);
-		    let tmp = self.bus.read_byte(hl);
-		    self.bus.write_byte(de, tmp);
-		    self.write_rp(pfx, 1, de.wrapping_sub(1));
-		    self.write_rp(pfx, 2, hl.wrapping_sub(1));
-		    self.write_rp(pfx, 0, bc.wrapping_sub(1));
+		    let n = self.a.wrapping_add(tmp);
+		    self.f.set(PSW::Y, (n & 0x02) != 0);
+		    self.f.set(PSW::X, (n & 0x08) != 0);
 
-		    let n = tmp.wrapping_add(self.a);
-		    self.f.set(PSW::X, (n & 0x02) != 0);
-		    self.f.set(PSW::Y, (n & 0x08) != 0);
-		    self.f.remove(PSW::H);
-		    self.f.remove(PSW::N);
-		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
-
-		    if bc.wrapping_sub(1) != 0 {
-			self.pc -= 2;
-		    }
-		    if bc != 1 {
-			self.wz = self.pc.wrapping_add(1);
+		    if opcode == 0xb0 || opcode == 0xb8 {
+			if bc.wrapping_sub(1) != 0 {
+			    self.pc -= 2;
+			}
+			if bc != 1 {
+			    self.wz = self.pc.wrapping_add(1);
+			}
 		    }
 		},
 		0xa1 | 0xb1 | 0xa9 | 0xb9 => { //CPI/CPD/CPIR/CPDR
@@ -1585,14 +1579,22 @@ impl Cpu {
 		    self.f.set(PSW::Y, (n & 0x02) != 0);
 		    self.f.set(PSW::P, bc.wrapping_sub(1) != 0);
 		    self.f.insert(PSW::N);
-		    self.wz = self.wz.wrapping_add(1);
+		    if opcode == 0xa1 {
+			self.wz = self.wz.wrapping_add(1);
+		    } else if opcode == 0xa9 {
+			self.wz = self.wz.wrapping_sub(1);
+		    }
 
 		    if opcode == 0xb1 || opcode == 0xb9 {
 			if bc.wrapping_sub(1) != 0 {
 			    self.pc -= 2;
 			}
 			if bc.wrapping_sub(1) == 1 || self.a == tmp1 {
-			    self.wz = self.wz.wrapping_add(1);
+			    if opcode == 0xb1 {
+				self.wz = self.wz.wrapping_add(1);
+			    } else {
+				self.wz = self.wz.wrapping_sub(1);
+			    }
 			} else {
 			    self.wz = self.pc.wrapping_add(1);
 			}
@@ -1692,6 +1694,12 @@ impl Cpu {
 		    self.b = btmp;
 		    self.wz = self.read_rp(pfx, 0).wrapping_sub(1);
 		},
+		0x00..=0x3f | 0xc0..=0xff |
+		0x80..=0x9f | 0x77 | 0x7f |
+		0xa4..=0xa7 | 0xb4..=0xb7 |
+		0xac..=0xaf | 0xbc..=0xbf => { //NOP
+		    ; //nothing
+		},
 		_ => {
 		    todo!("unimplemented instruction ED {opcode:02X}");
 		},
@@ -1708,15 +1716,13 @@ impl Cpu {
 		
 		self.bitop(pfx, opcode, s, hlptr, true);
 		self.wz = hlptr;
-		self.r = self.r.wrapping_sub(1); //todo fix this at the source	    
+		self.r = self.r.wrapping_sub(1); //todo fix this at the source
+		if self.r > 0x7f {
+		    self.r = 0x7f;
+		}
 	    },
 	    _ => panic!("bad prefix {pfx:04x}"),
 	};
-
-	self.r = self.r.wrapping_add(1);
-	if self.r > 0x7f {
-	    self.r = 0;
-	}
 
 	//adjust q
 	match pfx {
