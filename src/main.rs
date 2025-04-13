@@ -91,6 +91,7 @@ fn main() {
     let mut cpu = z80::Cpu::new(false);
     let mut stdin = io::stdin();
 
+    /*
     let mut entries: Vec<_> = std::fs::read_dir("/home/cookie/src/sstest-z80/v1/").unwrap()
 	.map(|r| r.unwrap())
 	.collect();
@@ -188,8 +189,8 @@ fn main() {
 	    }
 	}
     }
-    println!("All tests passed");
-    /*let path = env::args().nth(1).expect("Usage: vpspec <path>");
+    println!("All tests passed");*/
+    let path = env::args().nth(1).expect("Usage: vpspec <path>");
     let buf: Vec<u8> = std::fs::read(path).unwrap();
     let stub_buf: Vec<u8> = std::fs::read("cpmstub.bin").unwrap();
     cpu.bus.load_bin(0xdc00, &stub_buf);
@@ -197,8 +198,8 @@ fn main() {
     cpu.bus.write_word(6, 0xdc00); //jmp $dc00
     cpu.bus.load_bin(0x100, &buf);
     cpu.reset();
-    cpu.pc = 0x100;*/
-    /*
+    cpu.pc = 0x100;
+    
     'running: loop {
 	let cyc = cpu.step();
 	if cyc == 0 || cpu.pc == 0 {
@@ -208,5 +209,5 @@ fn main() {
 	cpu.bus.step(cyc);
 
 	//let _ = stdin.read(&mut [0u8]).unwrap();
-    }*/
+    }
 }

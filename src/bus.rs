@@ -127,10 +127,10 @@ impl Bus for CpmBus {
 
     fn write_io_byte(&mut self, port: u16, data: u8) {
 	match port {
-	    //0x00aa => {
-		//print!("{}", data as char);
-	    //},
-	    //0x00ff => panic!("warm booted"),
+	    0x00aa => {
+		print!("{}", data as char);
+	    },
+	    0x00ff => panic!("warm booted"),
 	    _ => {
 		//todo!("unhandled io port write {port:04x}"),
 		self.ports[port as usize] = data;
