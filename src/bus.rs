@@ -53,15 +53,17 @@ impl Bus for ZXBus {
 
     fn read_io_byte(&mut self, port: u16) -> u8 {
 	match port {
-	    _ =>
-		todo!("unhandled io port read {port:04x}"),
+	    _ => {
+		println!("unhandled io port read {port:04x}");
+		0
+	    },
 	}
     }
 
     fn write_io_byte(&mut self, port: u16, data: u8) {
 	match port {
 	    _ =>
-		todo!("unhandled io port write {port:04x}"),
+		println!("unhandled io port write {port:04x}"),
 	};
     }
 

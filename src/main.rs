@@ -87,9 +87,80 @@ struct Test {
     pub r#final: State,
 }
 
+const pal_dim: [u8; 24] = [0x00, 0x00, 0x00,
+		 0x00, 0x00, 0xd8,
+		 0xd8, 0x00, 0x00,
+		 0xd8, 0x00, 0xd8,
+		 0x00, 0xd8, 0x00,
+		 0x00, 0xd8, 0xd8,
+		 0xd8, 0xd8, 0x00,
+		 0xd8, 0xd8, 0xd8,];
+
+const pal_bri: [u8; 24] = [0x00, 0x00, 0x00,
+		 0x00, 0x00, 0xff,
+		 0xff, 0x00, 0x00,
+		 0xff, 0x00, 0xff,
+		 0x00, 0xff, 0x00,
+		 0x00, 0xff, 0xff,
+		 0xff, 0xff, 0x00,
+		 0xff, 0xff, 0xff,];
+
+fn draw_screen(bus: &mut bus::ZXBus, tex: &mut sdl2::render::Texture) {
+    tex.with_lock(None, |buf: &mut [u8], pitch: usize| {
+	for x in 0..256 {
+	    for y in 0..192 {
+		let offset = y as usize * pitch + x as usize * 3;
+		let px_addr_hi = 0b01000000 | (((y as u8) >> 3) & 0x18)
+		    | ((y as u8) & 7);
+		let px_addr_lo = (((y as u8) << 2) & 0xe0) | (((x as u8) >> 3) & 0x1f);
+		let px_addr = ((px_addr_hi as u16) << 8) | (px_addr_lo as u16);
+		let byte = bus.read_byte(px_addr);
+		let px = (byte >> (((x % 8) as i8) - 7).abs()) & 1;
+		let attr_addr = (y / 8) * 32 + (x / 8);
+		let attr = bus.read_byte(0x5800 + attr_addr as u16);
+		let bri = (attr & 0x40) != 0;
+		let paper = (attr >> 3) & 7;
+		let ink = attr & 7;
+		let col = if px != 0 {
+		    ink as usize
+		} else {
+		    paper as usize
+		};
+		let col = col * 3;
+		let pal = match bri {
+		    true => pal_bri,
+		    _ => pal_dim,
+		};
+		buf[offset] = pal[col];
+		buf[offset + 1] = pal[col + 1];
+		buf[offset + 2] = pal[col + 2];
+	    }
+	}
+    }).unwrap();
+}
+
 fn main() {
     let mut cpu = z80::Cpu::new(false);
     let mut stdin = io::stdin();
+
+    let context = sdl2::init().unwrap();
+    let video = context.video().unwrap();
+    let width = 256 * 3;
+    let height = 192 * 3;
+    let win = video.window("vpspec", width, height)
+	.position_centered()
+	.opengl()
+	.build()
+	.unwrap();
+    let mut canvas = win.into_canvas().build().unwrap();
+    let tex_create = canvas.texture_creator();
+    let mut tex = tex_create
+	.create_texture_streaming(PixelFormatEnum::RGB24, 256, 192)
+	.unwrap();
+    let mut event_pump = context.event_pump().unwrap();
+
+    canvas.clear();
+    canvas.present();
 
     /*
     let mut entries: Vec<_> = std::fs::read_dir("/home/cookie/src/sstest-z80/v1/").unwrap()
@@ -190,24 +261,44 @@ fn main() {
 	}
     }
     println!("All tests passed");*/
-    let path = env::args().nth(1).expect("Usage: vpspec <path>");
-    let buf: Vec<u8> = std::fs::read(path).unwrap();
-    let stub_buf: Vec<u8> = std::fs::read("cpmstub.bin").unwrap();
-    cpu.bus.load_bin(0xdc00, &stub_buf);
-    cpu.bus.write_byte(5, 0xc3);
-    cpu.bus.write_word(6, 0xdc00); //jmp $dc00
-    cpu.bus.load_bin(0x100, &buf);
+    //let path = env::args().nth(1).expect("Usage: vpspec <path>");
+    let buf: Vec<u8> = std::fs::read("48k.rom").unwrap();
+    //let stub_buf: Vec<u8> = std::fs::read("cpmstub.bin").unwrap();
+    //cpu.bus.load_bin(0xdc00, &stub_buf);
+    //cpu.bus.write_byte(5, 0xc3);
+    //cpu.bus.write_word(6, 0xdc00); //jmp $dc00
+    cpu.bus.load_bin(0, &buf);
     cpu.reset();
-    cpu.pc = 0x100;
-    
+    //cpu.pc = 0x100;
+
+    let mut acc: u128 = 0;
     'running: loop {
+	let now = time::Instant::now();
+	for e in event_pump.poll_iter() {
+	    match e {
+		Event::Quit {..} |
+		Event::KeyDown { keycode: Some(Keycode::Escape), ..} => {
+		    break 'running;
+		},
+		_ => {},
+	    }
+	}
+	
 	let cyc = cpu.step();
-	if cyc == 0 || cpu.pc == 0 {
+	if cyc == 0 {
 	    println!("died at {:04x} cyc = {cyc}", cpu.pc);
 	    break 'running;
 	}
 	cpu.bus.step(cyc);
 
+	let elapsed = now.elapsed();
+	acc += elapsed.as_micros();
+	if acc >= 20_000 {
+	    acc -= 20_000;
+	    draw_screen(&mut cpu.bus, &mut tex);
+	    canvas.copy(&tex, None, None).unwrap();
+	    canvas.present();
+	}
 	//let _ = stdin.read(&mut [0u8]).unwrap();
     }
 }
