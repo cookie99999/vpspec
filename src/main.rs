@@ -286,6 +286,12 @@ fn main() {
 		Event::KeyUp { keycode: Some(Keycode::Return), ..} => {
 		    cpu.bus.keyup(0);
 		},
+		Event::KeyDown { keycode: Some(Keycode::LShift), ..} => {
+		    cpu.bus.keydown(1);
+		},
+		Event::KeyUp { keycode: Some(Keycode::LShift), ..} => {
+		    cpu.bus.keyup(1);
+		},
 		_ => {},
 	    }
 	}
@@ -299,12 +305,14 @@ fn main() {
 
 	let elapsed = now.elapsed();
 	acc += elapsed.as_micros();
-	if acc >= 20_000 {
-	    acc -= 20_000;
+	if cpu.bus.vblank {
+	    //acc -= 20_000;
 	    draw_screen(&mut cpu.bus, &mut tex);
 	    canvas.copy(&tex, None, None).unwrap();
 	    canvas.present();
+	    cpu.bus.vblank = false;
 	}
 	//let _ = stdin.read(&mut [0u8]).unwrap();
+
     }
 }

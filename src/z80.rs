@@ -920,6 +920,14 @@ impl Cpu {
     pub fn step(&mut self) -> usize {
 	let oldcycles = self.cycles;
 
+	if self.bus.irq && self.iff && self.im == 1 {
+	    self.push_word(self.pc);
+	    self.pc = 0x0038;
+	    self.iff = false;
+	    self.iff2 = false;
+	    self.bus.irq = false;
+	}
+	
 	let (pfx, mut opcode, op1, opw, instr, d_bits, d, s, rp, c, hlptr) = self.getops();
 
 	self.r = self.r.wrapping_add(1);
@@ -927,7 +935,7 @@ impl Cpu {
 	    self.r = 0;
 	}
 	
-	if self.bus.irq && self.iff {
+	if self.bus.irq && self.iff && self.im == 0 {
 	    self.pc -= 1; //1 byte will be added later, want to ret back to interrupted instr
 	    self.iff = false;
 	    self.bus.irq = false;
@@ -935,6 +943,7 @@ impl Cpu {
 	}
 	if self.ei_pend {
 	    self.iff = true;
+	    self.iff2 = true;
 	    self.ei_pend = false;
 	    //there will be no chance for interrupts until
 	    //after this instruction runs so we have effectively
@@ -1263,8 +1272,6 @@ impl Cpu {
 		    self.iff2 = false;
 		},
 		0xfb => { //EI
-		    self.iff = true;
-		    self.iff2 = true;
 		    self.ei_pend = true;
 		},
 		0x08 => { //EX AF, AF'
@@ -1482,12 +1489,13 @@ impl Cpu {
 		    self.iff = self.iff2;
 		    self.pc = self.pop_word();
 		    self.wz = self.pc;
+		    self.bus.irq = false;
 		},
 		0x4d => { //RETI
 		    self.pc = self.pop_word();
 		    self.wz = self.pc;
 		    self.iff = self.iff2;
-		    //todo interrupt acknowledge stuff
+		    self.bus.irq = false;
 		},
 		0x6f => { //RLD
 		    let tmp = self.bus.read_byte(hlptr);

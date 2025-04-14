@@ -21,6 +21,7 @@ pub struct ZXBus {
     pub irq: bool,
     pub irq_vec: u8,
     keys: [bool; 60],
+    pub vblank: bool,
 }
 
 impl Bus for ZXBus {
@@ -55,11 +56,14 @@ impl Bus for ZXBus {
     fn read_io_byte(&mut self, port: u16) -> u8 {
 	match port {
 	    0xbffe => {
-		0 | (self.keys[0] as u8)
+		0xff ^ (self.keys[0] as u8)
+	    },
+	    0xfefe => {
+		0xff ^ (self.keys[1] as u8)
 	    },
 	    _ => {
 		println!("unhandled io port read {port:04x}");
-		0
+		0xff
 	    },
 	}
     }
@@ -78,7 +82,13 @@ impl Bus for ZXBus {
     }
 
     fn step(&mut self, cyc: usize) {
-
+	self.cycles += cyc;
+	if self.cycles >= 20_000 {
+	    self.irq = true;
+	    self.irq_vec = 0xff; //RST 38
+	    self.cycles -= 20_000;
+	    self.vblank = true;
+	}
     }
 }
 
@@ -91,6 +101,7 @@ impl ZXBus {
 	    irq: false,
 	    irq_vec: 0,
 	    keys: [false; 60],
+	    vblank: false,
 	}
     }
 
