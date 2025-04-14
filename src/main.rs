@@ -280,6 +280,12 @@ fn main() {
 		Event::KeyDown { keycode: Some(Keycode::Escape), ..} => {
 		    break 'running;
 		},
+		Event::KeyDown { keycode: Some(Keycode::Return), ..} => {
+		    cpu.bus.keydown(0);
+		},
+		Event::KeyUp { keycode: Some(Keycode::Return), ..} => {
+		    cpu.bus.keyup(0);
+		},
 		_ => {},
 	    }
 	}

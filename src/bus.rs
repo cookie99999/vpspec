@@ -20,6 +20,7 @@ pub struct ZXBus {
     cycles: usize,
     pub irq: bool,
     pub irq_vec: u8,
+    keys: [bool; 60],
 }
 
 impl Bus for ZXBus {
@@ -53,6 +54,9 @@ impl Bus for ZXBus {
 
     fn read_io_byte(&mut self, port: u16) -> u8 {
 	match port {
+	    0xbffe => {
+		0 | (self.keys[0] as u8)
+	    },
 	    _ => {
 		println!("unhandled io port read {port:04x}");
 		0
@@ -86,11 +90,20 @@ impl ZXBus {
 	    cycles: 0,
 	    irq: false,
 	    irq_vec: 0,
+	    keys: [false; 60],
 	}
     }
 
     pub fn vram(&self) -> &[u8] {
 	&self.ram[0x4000 - RAM_START as usize ..= 0x5aff - RAM_START as usize]
+    }
+
+    pub fn keydown(&mut self, key: usize) {
+	self.keys[key] = true;
+    }
+
+    pub fn keyup(&mut self, key: usize) {
+	self.keys[key] = false;
     }
 }
 
